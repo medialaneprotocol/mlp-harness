@@ -1,0 +1,58 @@
+[package]
+name = "mlp-harness"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The Media Lane Protocol's verification layer: a deterministic, sans-IO network harness that drives the protocol's machines over a modelled link, checks the protocol's invariants, and predicts what a link will do."
+license = "Apache-2.0"
+repository = "https://github.com/medialaneprotocol/mlp-harness"
+readme = "README.md"
+keywords = ["media", "protocol", "transport", "harness", "sans-io", "testing"]
+categories = ["network-programming", "development-tools::testing"]
+# The harness is consumed by revision, the way the protocol's other
+# repositories are: its dependency `mlp-core` is itself consumed by revision
+# and is not published to a registry.
+publish = false
+
+[dependencies]
+# The machines the harness drives. Pinned by an immutable revision: the
+# harness tests one exact state of the protocol's core.
+mlp-core = { git = "https://github.com/medialaneprotocol/mlp-core", rev = "d1c257d0bed5e2ae23371217cde8bda87f0656aa" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# The harness's own gate exercises the scenarios it ships; the property
+# suite needs a deterministic clock of its own.
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+
+[lints.clippy]
+# The default group, at a level a change cannot slip past. The pedantic
+# group is not enabled wholesale: it asks for `#[must_use]` on hundreds of
+# accessors and flags the deliberate numeric conversions the model makes.
+all = { level = "warn", priority = -1 }
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+missing_const_for_fn = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+too_many_arguments = "allow"
+field_reassign_with_default = "allow"
+useless_conversion = "allow"
+assertions_on_constants = "allow"
+bool_assert_comparison = "allow"
+needless_borrow = "allow"
+needless_range_loop = "allow"
+explicit_counter_loop = "allow"
