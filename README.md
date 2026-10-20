@@ -11,8 +11,6 @@ byte crosses a real network.
 - **[The design](docs/design.md)** — the link model with every parameter,
   the scenario model, the invariant model, the trace format, the
   prediction interface.
-- **[The switch-over plan](docs/switch-over.md)** — how the corpus and the
-  core move onto this harness, and in which order.
 
 ## What it is
 
@@ -111,7 +109,7 @@ src/            the harness: the link, the clock, the driver, the invariants,
 scenarios/      the shipped scenarios: one per tier, one per story, and one
                 per deliberately broken peer
 scripts/        the gate, and the authoring tool for the scenarios
-docs/           the design, and the switch-over plan
+docs/           the design
 ```
 
 ## Licence

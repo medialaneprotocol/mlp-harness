@@ -40,8 +40,9 @@ a difference from it.
 The harness depends on `mlp-core` — the machines it drives — and on nothing
 else of ours. `mlp-core` does not depend on the harness, except as a
 *dev-dependency* for its own suites: a cycle cargo allows, and one the
-harness's repository sets up in the wave that switches the consumers over
-(see [the switch-over plan](switch-over.md)).
+core's manifest unifies with a patch, so that the harness's dependency on
+the core resolves to the core under test and the two crates share one copy
+of the machines.
 
 The consumer depends on the harness, never the other way round.
 
