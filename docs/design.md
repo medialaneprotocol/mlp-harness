@@ -372,8 +372,8 @@ five things:
 ### 6.1 The digest
 
 The digest is FNV-1a over 64 bits, written as sixteen lowercase hex
-digits — the same shape the protocol's corpus uses, so a corpus document's
-digest field keeps its meaning across the switch.
+digits — the shape the protocol's corpus documents carry, so a corpus
+document's digest field means the same thing everywhere.
 
 It covers the **decisions** and deliberately not the timings: it answers
 "did the protocol decide something different?", and the timings depend on
@@ -448,11 +448,12 @@ and compares the counterexamples with the **known findings**, which are
 committed in `known-findings.json` with the reason they exist. A *new*
 counterexample is a gate failure: somebody has to look at it.
 
-At the pinned revision the known findings are two seeds that break INV-8 —
-the echo's budget against a link whose loss drives the estimator's pace
-down, so the pulse update waits for the pacer longer than the budget
-allows. The fixes in the core's own work change both, and the list is
-emptied when the pin moves (see the switch-over plan).
+At the pinned revision the known findings are one seed that breaks INV-8:
+a T3 link whose carrier is handed over mid-session measures a 484 ms
+round trip, so the echo's budget is 2010 ms, and the echo's p95 reaches
+2091 ms — the handover's loss drives the estimator's pace down, and the
+pulse update waits for the pacer longer than the budget allows. The
+finding is committed with its reason, so a reader knows what it is.
 
 ---
 
@@ -475,8 +476,9 @@ emptied when the pin moves (see the switch-over plan).
 
 ## 10. What the harness found
 
-The harness is a verification layer, and it has already found two things
-about the core it drives, at the revision it pins.
+The harness is a verification layer, and it has already found real
+defects in the core it drives. The core carries both fixes, and the
+harness's gate holds it to them.
 
 ### 10.1 The receiver's gap detection counts a reordering as a loss
 
@@ -485,19 +487,21 @@ core's writer drains by priority, so an object may overtake an older one
 on the wire; the receiver must not lower its expectation when that
 happens, or every later object looks like a lost one (MLP spec §6.2.2).
 
-At the pinned revision the expectation *does* move back, so a reordered
-object costs the receiver two phantom gaps, and the estimator reacts to the
-phantom loss by decaying the pace. The fix is in the core's own work; the
-harness's pin moves with it in the switch-over wave.
+The expectation moves forward only: an overtaken object is reordered,
+never a gap, and a reordered object leaves the expectation where it was.
+A gap is a gap, and only a gap.
 
 ### 10.2 The sender's round trip starts at one millisecond
 
 The receiver's first feedback report carries a round trip of zero — it has
-not measured one yet — and the sender's estimator takes the report as a
-*sample*, so the sender's round trip starts at one millisecond and grows
-back over the next reports. The estimator's own rules say a report is a
-cross-check and never a sample (MLP spec §6.2.2); the fix is in the
-core's own work as well.
+not measured one yet — and the sender's estimator must treat the report as
+a *cross-check*, never as a sample (MLP spec §6.2.2).
+
+The estimator does: a report cross-checks the round trip the sender
+measured, and a probe's echo is the only sample. The round trip is
+measured on the sender's own clock, from the epoch the probe carried
+(MLP spec §6.2.6), and an echo that answers no outstanding obligation is
+not a measurement at all.
 
 Both findings are the harness doing its job: a verification layer that
 finds nothing is a decoration.

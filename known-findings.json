@@ -5,11 +5,8 @@
   "findings": [
     {
       "seed": 20240192,
-      "invariant": "INV-8"
-    },
-    {
-      "seed": 20240265,
-      "invariant": "INV-8"
+      "invariant": "INV-8",
+      "reason": "A T3 link whose carrier is handed over mid-session measures a 484 ms round trip, so the echo's budget is 2010 ms; the echo's p95 reaches 2091 ms, because the handover's loss drives the estimator's pace down and the pulse update waits for the pacer longer than the budget allows."
     }
   ]
 }
