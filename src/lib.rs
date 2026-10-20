@@ -73,7 +73,7 @@ pub mod trace;
 pub mod wire;
 
 pub use clock::{VirtualClock, epoch};
-pub use driver::Driver;
+pub use driver::{Driver, carrier_for};
 pub use faults::Faults;
 pub use invariants::{DEFINITIONS, Definition, Invariant, Outcome};
 pub use link::{Direction, DropReason, Handover, Jitter, Link, LinkProfile, LossModel, Tier};

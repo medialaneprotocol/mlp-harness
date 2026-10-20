@@ -206,6 +206,13 @@ pub struct Measurements {
     pub receiver_duplicated: u64,
     /// The objects the receiver dropped in assembly.
     pub receiver_dropped_objects: u64,
+    /// How many cells the sender still owed the receiver at the end.
+    ///
+    /// The convergence promise is stated in cells (MLP spec §2.1), so the
+    /// residue is a measurement like any other.
+    pub pending_cells: u32,
+    /// How many cells the surface carries.
+    pub cells: u32,
     /// The scenario's length, in milliseconds.
     pub duration_ms: u64,
 }

@@ -1360,6 +1360,8 @@ impl Driver {
             receiver_reordered: receiver_stats.reordered_objects,
             receiver_duplicated: receiver_stats.duplicate_objects,
             receiver_dropped_objects: receiver_stats.dropped_objects,
+            pending_cells: self.pending_cells(),
+            cells: self.grid.cells(),
             duration_ms: self.clock.elapsed_ms(),
         }
     }
@@ -1376,7 +1378,12 @@ impl Driver {
 }
 
 /// The carrier a link's MTU implies.
-fn carrier_for(mtu_bytes: u64) -> Carrier {
+///
+/// A link whose MTU is the data channel's cap carries the data channel;
+/// every other link carries the stream. The rule is the protocol's own
+/// (MLP spec §4.1), and a consumer that needs the same answer reads it
+/// here rather than repeating it.
+pub fn carrier_for(mtu_bytes: u64) -> Carrier {
     if mtu_bytes <= 1_150 {
         Carrier::DataChannel
     } else {
