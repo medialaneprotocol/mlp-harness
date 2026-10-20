@@ -34,6 +34,8 @@ byte crosses a real network.
 - a **property suite** that shrinks a failing case to a counterexample;
 - a **prediction**: given a tier's profile, what should the receiver's
   echo p95 be?
+- a **sans-IO driver** for a consumer's own state machines, so that they
+  are driven the way the protocol's are.
 
 [core]: https://github.com/medialaneprotocol/mlp-core
 
@@ -104,7 +106,8 @@ property suite, and asks every tier for a prediction.
 
 ```
 src/            the harness: the link, the clock, the driver, the invariants,
-                the trace, the predictions, the property suite
+                the trace, the predictions, the property suite, and the
+                sans-IO driver a consumer's own machines are driven with
 scenarios/      the shipped scenarios: one per tier, one per story, and one
                 per deliberately broken peer
 scripts/        the gate, and the authoring tool for the scenarios

@@ -38,6 +38,16 @@ fn process_origin() -> Instant {
     *ORIGIN.get_or_init(Instant::now)
 }
 
+/// The origin every clock in this process starts from.
+///
+/// A consumer's own machines are handed an [`Instant`], and they measure
+/// everything as a difference from the instant they were started at. This
+/// is that instant: one per process, so that several machines in one test
+/// binary agree on where they began.
+pub fn epoch() -> Instant {
+    process_origin()
+}
+
 /// A clock the harness owns.
 #[derive(Debug, Clone)]
 pub struct VirtualClock {

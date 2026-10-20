@@ -22,11 +22,18 @@ The harness is three things at once, and the three are one thing:
    one place, and checked, together with a trace a human can read and a
    machine can diff, and a prediction the model answers with.
 
+Beside those three, the harness holds the **sans-IO driver**: the small
+machine a consumer drives its *own* state machines with, so that a
+consumer's machines are driven the way the protocol's are (§4.5).
+
 It is **sans-IO, strictly**: no wall clock, no randomness, no sockets, no
 filesystem, no environment. Time is injected; randomness comes from a
 seeded generator the scenario carries. A scenario that runs twice runs
 identically, on any machine, in any order, in any process, and its trace is
-byte-identical.
+byte-identical. The origin the machines are handed comes from the process,
+once, and it is a *base* rather than a reading: it never appears in a
+trace, it never reaches a decision, and every number the harness reports is
+a difference from it.
 
 ### 1.1 The dependency runs one way
 
@@ -278,6 +285,25 @@ measure, so the harness reports its **demand** to the estimator on every
 tick: the pending cells, the dirty cells, and the queued objects. That is
 what arms the demand-driven probe and lets the pace climb on a link whose
 loss keeps the estimator's own ramp from growing it.
+
+### 4.5 The consumer's own machines
+
+The harness drives the *protocol's* machines over the link. A consumer
+deploys the transport inside machines of its own — a transport, a relay, a
+gateway — and it has to drive those the same way, or its tests measure
+something else.
+
+So the harness holds the **sans-IO driver** (`mlp_harness::sans_io`): a
+machine, a current time, a queue of transmissions, and a record of every
+action the machine emitted. The caller injects an input, advances the
+clock, and asks the driver to run the machine until it has nothing left to
+do. A **golden trace** is the snapshot of that record, and it can be
+compared with a committed file — with the durations normalised, so that a
+golden file is stable across runs.
+
+The driver is generic over `mlp_core::StateMachine`, the protocol's own
+trait, because that is the trait a consumer's machines implement to be
+driven by the protocol at all.
 
 ---
 

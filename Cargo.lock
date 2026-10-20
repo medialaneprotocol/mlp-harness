@@ -38,6 +38,7 @@ name = "mlp-harness"
 version = "0.1.0"
 dependencies = [
  "mlp-core",
+ "regex",
  "serde",
  "serde_json",
 ]

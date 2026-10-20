@@ -24,7 +24,9 @@
 //! * a **trace** a human can read and a machine can diff;
 //! * a **property suite** that shrinks a failing case to a counterexample;
 //! * a **prediction interface**: given a tier's profile and a scenario,
-//!   what should the receiver's echo p95 be?
+//!   what should the receiver's echo p95 be?;
+//! * a **sans-IO driver** for a consumer's own machines, so that a
+//!   consumer's state machines are driven the way the protocol's are.
 //!
 //! # What it is not
 //!
@@ -34,10 +36,16 @@
 //!
 //! # Determinism
 //!
-//! No wall clock, no randomness, no sockets, no filesystem, no environment.
-//! Time is injected; randomness comes from a seeded generator the scenario
-//! carries. A scenario that runs twice runs identically, on any machine, in
-//! any order, in any process — and its trace is byte-identical.
+//! A run reads nothing: no wall clock, no randomness, no sockets, no
+//! filesystem, no environment. Time is injected; randomness comes from a
+//! seeded generator the scenario carries. A scenario that runs twice runs
+//! identically, on any machine, in any order, in any process — and its
+//! trace is byte-identical.
+//!
+//! The origin the machines are handed comes from the process, once, and it
+//! is a *base* rather than a reading: it never appears in a trace, it never
+//! reaches a decision, and every number the harness reports is a difference
+//! from it.
 //!
 //! # Example
 //!
@@ -59,16 +67,18 @@ pub mod link;
 pub mod predict;
 pub mod property;
 pub mod rng;
+pub mod sans_io;
 pub mod scenario;
 pub mod trace;
 pub mod wire;
 
-pub use clock::VirtualClock;
+pub use clock::{VirtualClock, epoch};
 pub use driver::Driver;
 pub use faults::Faults;
 pub use invariants::{DEFINITIONS, Definition, Invariant, Outcome};
 pub use link::{Direction, DropReason, Handover, Jitter, Link, LinkProfile, LossModel, Tier};
 pub use predict::{Prediction, canonical_scenario, predict, predict_tier};
+pub use sans_io::{GoldenTrace, TestHarness};
 pub use scenario::{GridSpec, InputEvent, Region, Scenario, Step};
 pub use trace::Trace;
 
