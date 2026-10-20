@@ -118,6 +118,7 @@ pub struct Driver {
     lanes_created: u32,
     parks: u32,
     convergences: u64,
+    convergence_us: Option<u64>,
 
     decisions: Decisions,
     releases: Vec<Release>,
@@ -195,6 +196,7 @@ impl Driver {
             lanes_created: 1,
             parks: 0,
             convergences: 0,
+            convergence_us: None,
             decisions: Decisions::default(),
             releases: Vec::new(),
             objects: Vec::new(),
@@ -919,6 +921,7 @@ impl Driver {
 
     /// The capture produced a change in a region.
     fn capture_change(&mut self, region: crate::scenario::Region) {
+        self.convergence_us = None;
         let rect = CellRect::new(region.x_px, region.y_px, region.width_px, region.height_px);
         for cell in self.grid.cells_in_rect(&rect) {
             if !self.capture_dirty.contains(&cell) {
@@ -1193,6 +1196,11 @@ impl Driver {
     fn observe(&mut self) {
         if self.converged() && self.capture_dirty.is_empty() {
             self.convergences += 1;
+            if self.convergence_us.is_none() {
+                // The time to converge, measured from the last change.
+                self.convergence_us =
+                    Some(self.clock.elapsed_us().saturating_sub(self.last_change_us));
+            }
         }
         self.trim_releases();
         let observation = self.observation();
@@ -1355,12 +1363,9 @@ impl Driver {
         }
     }
 
-    /// The time from the last capture change to convergence.
+    /// The time from the last capture change to the convergence.
     fn convergence_ms(&self) -> Option<u64> {
-        if self.convergences == 0 {
-            return None;
-        }
-        Some((self.clock.elapsed_us().saturating_sub(self.last_change_us)) / 1_000)
+        self.convergence_us.map(|micros| micros / 1_000)
     }
 
     /// The pace the sender remembered for this link, when it has one.

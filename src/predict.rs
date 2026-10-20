@@ -57,6 +57,12 @@ pub struct Prediction {
     pub echo_samples: u64,
     /// What the tier promises for the echo's p95, in milliseconds.
     pub echo_p95_budget_ms: u64,
+    /// Whether the tier's echo promise applies to this link at all.
+    ///
+    /// The promise is a promise about a link inside the tier's envelope: a
+    /// link with an outage, or with loss beyond the tier's bound, is
+    /// outside it, and the promise does not apply there.
+    pub echo_promise_applies: bool,
     /// Whether the model's answer is inside the promise.
     pub echo_within_promise: bool,
     /// What the model says the time to convergence will be, in
@@ -87,6 +93,7 @@ impl Prediction {
     pub fn from_trace(trace: &Trace) -> Self {
         let budget = trace.scenario.tier.echo_budget_ms();
         let echo_p95_ms = trace.measurements.echo_p95_ms;
+        let echo_promise_applies = !matches!(trace.scenario.tier, Tier::T4);
         let echo_within_promise = match echo_p95_ms {
             Some(value) => value <= budget,
             None => true,
@@ -100,6 +107,7 @@ impl Prediction {
             echo_max_ms: trace.measurements.echo_max_ms,
             echo_samples: trace.measurements.echo_samples,
             echo_p95_budget_ms: budget,
+            echo_promise_applies,
             echo_within_promise,
             convergence_ms: trace.measurements.convergence_ms,
             convergences: trace.measurements.convergences,
@@ -158,12 +166,20 @@ pub fn canonical_scenario(tier: Tier) -> Scenario {
         });
     }
     // The settle phase is long enough for the slowest tier: the echo's
-    // round trip is two one-way delays plus the jitter's tail.
-    let settle_ms = (4 * rtt_ms).max(2_000) + 2_000;
+    // round trip is two one-way delays plus the jitter's tail, and the
+    // change has to be carried — at the pace the estimator may settle on,
+    // which is the protocol's floor, not the tier's rate.
+    let carry_ms = (10 * 1024 * 8 * 1_000) / tier_rate_bps(tier);
+    let settle_ms = (4 * rtt_ms).max(2_000) + 2_000 + carry_ms;
     scenario
         .steps
         .push(crate::scenario::Step::Advance { ms: settle_ms });
     scenario
+}
+
+/// The tier's downlink rate, in bits per second.
+fn tier_rate_bps(tier: Tier) -> u64 {
+    LinkProfile::tier(tier).down.rate_bps
 }
 
 /// Predict what a tier's canonical scenario does.
