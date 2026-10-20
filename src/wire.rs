@@ -182,7 +182,8 @@ pub fn encode_echo(echo: &ProbeEcho) -> Vec<u8> {
 
 /// Decode a probe echo.
 pub fn decode_echo(payload: &[u8]) -> Option<ProbeEcho> {
-    if payload.len() < ECHO_MARKER.len() + 4 + 8 + 8 + 4 || &payload[..ECHO_MARKER.len()] != ECHO_MARKER
+    if payload.len() < ECHO_MARKER.len() + 4 + 8 + 8 + 4
+        || &payload[..ECHO_MARKER.len()] != ECHO_MARKER
     {
         return None;
     }
@@ -215,7 +216,8 @@ pub fn encode_probe(probe: &mlp_core::media::MediaProbe) -> Vec<u8> {
 
 /// Decode a probe.
 pub fn decode_probe(payload: &[u8]) -> Option<mlp_core::media::MediaProbe> {
-    if payload.len() < PROBE_MARKER.len() + 4 + 8 + 4 || &payload[..PROBE_MARKER.len()] != PROBE_MARKER
+    if payload.len() < PROBE_MARKER.len() + 4 + 8 + 4
+        || &payload[..PROBE_MARKER.len()] != PROBE_MARKER
     {
         return None;
     }
@@ -250,7 +252,8 @@ pub fn encode_input(envelope: &MediaInputEnvelope) -> Vec<u8> {
 
 /// Decode an input envelope.
 pub fn decode_input(payload: &[u8]) -> Option<MediaInputEnvelope> {
-    if payload.len() < INPUT_MARKER.len() + 8 + 8 + 1 + 1 + 2 || &payload[..INPUT_MARKER.len()] != INPUT_MARKER
+    if payload.len() < INPUT_MARKER.len() + 8 + 8 + 1 + 1 + 2
+        || &payload[..INPUT_MARKER.len()] != INPUT_MARKER
     {
         return None;
     }
@@ -300,7 +303,12 @@ pub const fn bitmap_bytes(cells: u32) -> usize {
 /// an update covers: a bitmap. The padding makes the payload the size the
 /// scheduler estimated, so the byte counts the harness predicts are the
 /// byte counts the protocol would carry.
-pub fn encode_media_payload(cells: &[u32], total_cells: u32, total_bytes: usize, update_id: u64) -> Vec<u8> {
+pub fn encode_media_payload(
+    cells: &[u32],
+    total_cells: u32,
+    total_bytes: usize,
+    update_id: u64,
+) -> Vec<u8> {
     let bitmap_len = bitmap_bytes(total_cells);
     let mut out = vec![0u8; bitmap_len.max(1)];
     for cell in cells {

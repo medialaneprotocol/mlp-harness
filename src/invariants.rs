@@ -34,27 +34,37 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Invariant {
     /// An update is applied only if every part of it arrived.
+    #[serde(rename = "INV-1")]
     Inv1,
     /// At a converged observation the receiver's surface equals the sender's
     /// emitted state for every cell the receiver acknowledged.
+    #[serde(rename = "INV-2")]
     Inv2,
     /// No input is applied twice, and none after its deadline.
+    #[serde(rename = "INV-3")]
     Inv3,
     /// After a park beyond the grace period or a session end, the pressed set
     /// is empty.
+    #[serde(rename = "INV-4")]
     Inv4,
     /// Every queue stays within its cap.
+    #[serde(rename = "INV-5")]
     Inv5,
     /// No object exceeds `max_object_bytes`, and no update exceeds the
     /// carrier's part cap.
+    #[serde(rename = "INV-6")]
     Inv6,
     /// The bytes sent in any one-second window stay inside the budget.
+    #[serde(rename = "INV-7")]
     Inv7,
     /// The input echo stays inside `2 × RTT + 250 ms`.
+    #[serde(rename = "INV-8")]
     Inv8,
     /// A session survives every outage and flap schedule.
+    #[serde(rename = "INV-9")]
     Inv9,
     /// Every drop is attributed to exactly one hop.
+    #[serde(rename = "INV-10")]
     Inv10,
 }
 
@@ -120,11 +130,15 @@ impl Invariant {
     pub const fn forbids(self) -> &'static str {
         match self {
             Self::Inv1 => "an update applied while one of its parts is missing.",
-            Self::Inv2 => "a converged observation in which the receiver holds a cell the sender never emitted.",
+            Self::Inv2 => {
+                "a converged observation in which the receiver holds a cell the sender never emitted."
+            }
             Self::Inv3 => "an input applied twice, or applied after its deadline.",
             Self::Inv4 => "a key the receiver released that the sender still holds.",
             Self::Inv5 => "a queue deeper than its cap.",
-            Self::Inv6 => "an object larger than max_object_bytes, or an update with more parts than the carrier admits.",
+            Self::Inv6 => {
+                "an object larger than max_object_bytes, or an update with more parts than the carrier admits."
+            }
             Self::Inv7 => "more bytes released in a one-second window than the budget allows.",
             Self::Inv8 => "an echo series whose p95 exceeds the tier's budget.",
             Self::Inv9 => "a session lost to an outage, or a second lane created for one receiver.",

@@ -116,6 +116,11 @@ pub enum InputEvent {
     },
     /// Everything was released at once.
     ReleaseAll,
+    /// The receiver states the keys and buttons it holds.
+    ///
+    /// The pressed-set protocol: the sender releases every key the set does
+    /// not name (MLP spec §8.3.4).
+    PressedSet,
 }
 
 impl InputEvent {
@@ -152,7 +157,8 @@ impl InputEvent {
                     hash ^= u32::from(*byte);
                     hash = hash.wrapping_mul(16_777_619);
                 }
-                hash
+                // The code travels in four bytes.
+                hash & 0x00ff_ffff
             }
         }
     }

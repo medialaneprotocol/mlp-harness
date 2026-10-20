@@ -18,6 +18,7 @@ use crate::invariants::Invariant;
 
 /// A set of deliberate defects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Faults {
     /// The peer applies an update whose parts have not all arrived.
     pub apply_partial_update: bool,

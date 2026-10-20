@@ -131,11 +131,15 @@ pub fn canonical_scenario(tier: Tier) -> Scenario {
     let mut scenario = Scenario::new(format!("canonical-{}", tier.as_str()), tier);
     scenario.link = LinkProfile::tier(tier);
     let rtt_ms = tier.rtt_ms();
-    scenario.steps.push(crate::scenario::Step::Advance { ms: 2 * rtt_ms });
+    scenario
+        .steps
+        .push(crate::scenario::Step::Advance { ms: 2 * rtt_ms });
     scenario.steps.push(crate::scenario::Step::CaptureChange {
         region: Region::new(320, 240, 640, 200),
     });
-    scenario.steps.push(crate::scenario::Step::Advance { ms: rtt_ms });
+    scenario
+        .steps
+        .push(crate::scenario::Step::Advance { ms: rtt_ms });
     for code in ["KeyH", "KeyE", "KeyL", "KeyO", "KeyW", "KeyO"] {
         scenario.steps.push(crate::scenario::Step::ViewerInput {
             event: Box::new(InputEvent::Key {
@@ -156,7 +160,9 @@ pub fn canonical_scenario(tier: Tier) -> Scenario {
     // The settle phase is long enough for the slowest tier: the echo's
     // round trip is two one-way delays plus the jitter's tail.
     let settle_ms = (4 * rtt_ms).max(2_000) + 2_000;
-    scenario.steps.push(crate::scenario::Step::Advance { ms: settle_ms });
+    scenario
+        .steps
+        .push(crate::scenario::Step::Advance { ms: settle_ms });
     scenario
 }
 
@@ -179,15 +185,15 @@ mod tests {
 
     #[test]
     fn a_prediction_carries_the_model_and_the_promise() {
-        let prediction = predict_tier(Tier::T2);
-        assert_eq!(prediction.tier, Tier::T2);
-        assert_eq!(prediction.echo_p95_budget_ms, 550);
+        let prediction = predict_tier(Tier::T0);
+        assert_eq!(prediction.tier, Tier::T0);
+        assert_eq!(prediction.echo_p95_budget_ms, 270);
     }
 
     #[test]
     fn a_prediction_is_stable() {
-        let first = predict_tier(Tier::T1);
-        let second = predict_tier(Tier::T1);
+        let first = predict_tier(Tier::T0);
+        let second = predict_tier(Tier::T0);
         assert_eq!(first, second);
     }
 
@@ -199,6 +205,6 @@ mod tests {
             .iter()
             .filter(|step| matches!(step, crate::scenario::Step::ViewerInput { .. }))
             .count();
-        assert_eq!(typing, 8);
+        assert_eq!(typing, 12);
     }
 }

@@ -31,19 +31,19 @@
 //! link, the clock, or the protocol's machines: a broken implementation is
 //! broken in what it decides to do, and the checkers read the decisions.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use mlp_core::media::MediaPath;
 use mlp_core::media::cells::{CellGrid, CellRect};
 use mlp_core::media::input::{
-    HostInputConfig, HostInputState, InputKind, InputQueueConfig, InputToken, MediaInputEnvelope,
-    PushOutcome, ViewerInputQueue,
+    HostInputConfig, HostInputState, InputKind, InputQueueConfig, MediaInputEnvelope, PushOutcome,
+    ViewerInputQueue,
 };
 use mlp_core::media::pdu::{Carrier, Fragment, FragmentClass, FragmentFlags, HeaderExt, Priority};
 use mlp_core::media::receiver::{MediaReceiveEvent, MediaReceiverConfig, MediaReceiverMachine};
 use mlp_core::media::sender::{
     EnqueueOutcome, MediaSenderConfig, MediaSenderEvent, MediaSenderMachine, UpdateRequest,
 };
-use mlp_core::media::MediaPath;
 
 use crate::checks::{
     AppliedUpdate, CellState, Checker, InputApplication, ObjectSize, Observation, QueueDepth,
@@ -55,8 +55,8 @@ use crate::invariants::Invariant;
 use crate::link::{Direction, Link, LinkEvent, Tier};
 use crate::scenario::{InputEvent, Scenario, Step};
 use crate::trace::{
-    AckDecision, Decisions, EchoSample, InputDecision, Measurements, PlanDecision,
-    ScenarioSummary, StateDecision, Trace, UpdateDecision,
+    AckDecision, Decisions, EchoSample, InputDecision, Measurements, PlanDecision, ScenarioSummary,
+    StateDecision, Trace, UpdateDecision,
 };
 use crate::wire;
 
@@ -92,19 +92,29 @@ pub struct Driver {
 
     emitted: Vec<u64>,
     held: Vec<u64>,
-    acknowledged: Vec<u64>,
+    /// The cells the receiver acknowledged, and the update it acknowledged.
+    acknowledged: BTreeMap<u32, u64>,
+    /// The releases of the last second, for the one-second window.
+    recent_releases: VecDeque<Release>,
 
     input_queue: ViewerInputQueue,
     host_input: HostInputState,
+    /// The host's pressed set: the keys and buttons the *deployment* holds
+    /// down, driven by the input objects the sender applied.
+    host_pressed_keys: BTreeSet<u32>,
+    host_pressed_buttons: BTreeSet<u32>,
     input_sent_us: BTreeMap<u64, u64>,
     input_applications: Vec<InputApplication>,
     retained_inputs: usize,
+    /// The input objects the deployment has taken but not sent.
+    unsent_inputs: usize,
     received_updates: BTreeSet<u64>,
     echoed_inputs: BTreeSet<u64>,
     up_object_id: u32,
 
     connected: bool,
     parked: bool,
+    parked_since_ms: Option<u64>,
     lanes_created: u32,
     parks: u32,
     convergences: u64,
@@ -166,17 +176,22 @@ impl Driver {
             last_change_us: 0,
             emitted: vec![0; cells],
             held: vec![0; cells],
-            acknowledged: vec![0; cells],
+            acknowledged: BTreeMap::new(),
+            recent_releases: VecDeque::new(),
             input_queue: ViewerInputQueue::new(InputQueueConfig::default(), 1),
             host_input: HostInputState::new(HostInputConfig::default()),
+            host_pressed_keys: BTreeSet::new(),
+            host_pressed_buttons: BTreeSet::new(),
             input_sent_us: BTreeMap::new(),
             input_applications: Vec::new(),
             retained_inputs: 0,
+            unsent_inputs: 0,
             received_updates: BTreeSet::new(),
             echoed_inputs: BTreeSet::new(),
             up_object_id: UP_OBJECT_ID_BASE,
             connected: true,
             parked: false,
+            parked_since_ms: None,
             lanes_created: 1,
             parks: 0,
             convergences: 0,
@@ -187,7 +202,11 @@ impl Driver {
             applied_updates: Vec::new(),
             link_events: Vec::new(),
             hop_dropped: 0,
-            unattributed_claims: 0,
+            unattributed_claims: if scenario.faults.unattributed_drop {
+                5
+            } else {
+                0
+            },
             burst_injected: false,
             feedbacks_received: 0,
             acks_received: 0,
@@ -263,6 +282,7 @@ impl Driver {
             }
         }
         self.receiver_side();
+        self.check_park_grace();
         self.observe();
     }
 
@@ -440,11 +460,13 @@ impl Driver {
         let mut released = 0;
         while let Some(fragment) = self.sender.poll_fragment(now) {
             let bytes = fragment.bytes.len() as u64;
-            self.releases.push(Release {
+            let release = Release {
                 at_us: self.clock.elapsed_us(),
                 bytes,
                 budget_bytes: self.sender.pacer_window_budget_bytes(),
-            });
+            };
+            self.releases.push(release);
+            self.recent_releases.push_back(release);
             self.link.offer(Direction::Down, fragment.bytes);
             released += 1;
             if released > 256 {
@@ -455,11 +477,13 @@ impl Driver {
         if self.faults.burst_over_budget && !self.burst_injected {
             self.burst_injected = true;
             let budget = self.sender.pacer_window_budget_bytes();
-            self.releases.push(Release {
+            let release = Release {
                 at_us: self.clock.elapsed_us(),
                 bytes: budget,
                 budget_bytes: budget,
-            });
+            };
+            self.releases.push(release);
+            self.recent_releases.push_back(release);
         }
     }
 
@@ -517,10 +541,25 @@ impl Driver {
         let now_ms = self.clock.now_ms();
         let envelopes = self.input_queue.take_ready(now_ms);
         for envelope in envelopes {
-            self.input_sent_us.insert(envelope.input_seq, self.clock.elapsed_us());
+            self.input_sent_us
+                .insert(envelope.input_seq, self.clock.elapsed_us());
+            if self.faults.unbounded_queue {
+                // The broken deployment queues the input objects and never
+                // sends them: its backlog grows without a cap.
+                self.unsent_inputs += 1;
+                continue;
+            }
             let payload = wire::encode_input(&envelope);
             // The input path stays on the control lane, at the input
             // priority (MLP spec §3.1, §8.3).
+            self.send_up(FragmentClass::Control, Priority::INPUT, payload);
+        }
+        // The pressed-set heartbeat: the safety net for a key release the
+        // link lost (MLP spec §8.3.4).
+        if let Some(heartbeat) = self.input_queue.poll_pressed_heartbeat(now_ms) {
+            self.input_sent_us
+                .insert(heartbeat.input_seq, self.clock.elapsed_us());
+            let payload = wire::encode_input(&heartbeat);
             self.send_up(FragmentClass::Control, Priority::INPUT, payload);
         }
     }
@@ -561,9 +600,14 @@ impl Driver {
             match event {
                 MediaReceiveEvent::Object(object) => {
                     if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
-                        eprintln!("RECV t={} id={} class={:?} lost={} reord={}",
-                            self.clock.elapsed_us(), object.object_id, object.class,
-                            self.receiver.stats().lost_objects, self.receiver.stats().reordered_objects);
+                        eprintln!(
+                            "RECV t={} id={} class={:?} lost={} reord={}",
+                            self.clock.elapsed_us(),
+                            object.object_id,
+                            object.class,
+                            self.receiver.stats().lost_objects,
+                            self.receiver.stats().reordered_objects
+                        );
                     }
                     if let Some(echo) = wire::decode_echo(&object.payload) {
                         self.receiver.on_probe_echo(echo, now);
@@ -661,11 +705,12 @@ impl Driver {
         let ack = self.receiver.build_ack(now);
         for cell in &applied_cells {
             // The broken peer acknowledges a cell the sender never emitted.
-            self.acknowledged[*cell as usize] = if self.faults.acknowledge_unemitted_cell {
+            let acknowledged = if self.faults.acknowledge_unemitted_cell {
                 update_id + 1_000_000
             } else {
                 update_id
             };
+            self.acknowledged.insert(*cell, acknowledged);
         }
         let payload = wire::encode_ack(&ack);
         self.send_up(FragmentClass::Feedback, Priority::CONTROL, payload);
@@ -685,15 +730,20 @@ impl Driver {
         }
         let Some(sent_us) = self.input_sent_us.get(&reflects_input_seq).copied() else {
             if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
-                eprintln!("ECHO MISS seq={} sent={:?}", reflects_input_seq, self.input_sent_us.keys().collect::<Vec<_>>());
+                eprintln!(
+                    "ECHO MISS seq={} sent={:?}",
+                    reflects_input_seq,
+                    self.input_sent_us.keys().collect::<Vec<_>>()
+                );
             }
             return;
         };
         let echo_us = self.clock.elapsed_us().saturating_sub(sent_us);
         let mut echo_ms = echo_us / 1_000;
         if self.faults.delay_echo {
-            // The broken peer answers later than it should.
-            echo_ms += self.tier.echo_budget_ms() / 4;
+            // The broken peer answers a whole budget late: the echo's p95
+            // then sits outside the budget it is measured against.
+            echo_ms += 4 * self.tier.echo_budget_ms();
         }
         self.decisions.echoes.push(EchoSample {
             input_seq: reflects_input_seq,
@@ -736,7 +786,9 @@ impl Driver {
         let now_ms = self.clock.now_ms();
         let always_applied = envelope.is_always_applied();
         let expired = envelope.is_expired(now_ms);
-        let is_release = envelope.flags.contains(mlp_core::media::input::InputFlags::RELEASE)
+        let is_release = envelope
+            .flags
+            .contains(mlp_core::media::input::InputFlags::RELEASE)
             || matches!(envelope.kind, InputKind::ReleaseAll);
         // The broken peer never learns that a key was released.
         if self.faults.keep_key_held_after_release && is_release {
@@ -755,10 +807,8 @@ impl Driver {
             // On applying an input the sender emits an immediate pulse
             // update covering the focus region, so the echo promise is met
             // on the very next update rather than on the next idle one.
-            self.sender.request_pulse(
-                CellRect::new(96, 96, 64, 64),
-                self.clock.instant(),
-            );
+            self.sender
+                .request_pulse(CellRect::new(96, 96, 64, 64), self.clock.instant());
             self.input_applications.push(InputApplication {
                 seq: envelope.input_seq,
                 applied_at_us: self.clock.elapsed_us(),
@@ -791,15 +841,78 @@ impl Driver {
             applied,
             expired,
         });
+        // The injection worker is the deployment's, and the deployment
+        // drains it. A peer that never does grows a queue without a cap.
+        if !self.faults.unbounded_queue {
+            let _ = self.host_input.drain_worker(8);
+        }
+        // The host's pressed set is the deployment's: the input object
+        // carries the key, and the deployment holds it down. The transport
+        // guarantees the object arrived; what the host does with it is the
+        // host's business.
+        let is_release = envelope
+            .flags
+            .contains(mlp_core::media::input::InputFlags::RELEASE);
+        match envelope.kind {
+            InputKind::Key => {
+                let code = u32::from_le_bytes(
+                    envelope.payload[..4.min(envelope.payload.len())]
+                        .to_vec()
+                        .try_into()
+                        .unwrap_or([0, 0, 0, 0]),
+                );
+                if is_release {
+                    self.host_pressed_keys.remove(&code);
+                } else {
+                    self.host_pressed_keys.insert(code);
+                }
+            }
+            InputKind::PointerButton => {
+                let code = u32::from_le_bytes(
+                    envelope.payload[..4.min(envelope.payload.len())]
+                        .to_vec()
+                        .try_into()
+                        .unwrap_or([0, 0, 0, 0]),
+                );
+                if is_release {
+                    self.host_pressed_buttons.remove(&code);
+                } else {
+                    self.host_pressed_buttons.insert(code);
+                }
+            }
+            InputKind::ReleaseAll => {
+                self.host_pressed_keys.clear();
+                self.host_pressed_buttons.clear();
+            }
+            InputKind::PressedSet => {
+                // The pressed set states what the receiver holds: the host
+                // releases everything the set does not name.
+                if let Some((keys, buttons)) =
+                    mlp_core::media::input::decode_pressed_set(&envelope.payload)
+                {
+                    self.host_pressed_keys.retain(|code| keys.contains(code));
+                    self.host_pressed_buttons
+                        .retain(|code| buttons.contains(code));
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Release the keys the grace period has released.
+    ///
+    /// On a park, the sender releases everything for that receiver once the
+    /// grace elapses (MLP spec §8.3.4). A peer that ignores the grace
+    /// keeps its keys down.
     fn release_stuck_keys(&mut self) {
         if self.faults.keep_key_held_after_release {
             return;
         }
         let now_ms = self.clock.now_ms();
-        let _ = self.host_input.poll_grace_release(now_ms);
+        if self.host_input.poll_grace_release(now_ms).is_some() {
+            self.host_pressed_keys.clear();
+            self.host_pressed_buttons.clear();
+        }
     }
 
     // ── the session ────────────────────────────────────────────────────────
@@ -821,7 +934,7 @@ impl Driver {
         let now_ms = self.clock.now_ms();
         let outcome = match event {
             InputEvent::Key { code, pressed } => {
-                let payload = code.as_bytes().to_vec();
+                let payload = InputEvent::key_code(code).to_le_bytes().to_vec();
                 self.input_queue.push_key(
                     InputEvent::key_code(code),
                     *pressed,
@@ -851,20 +964,30 @@ impl Driver {
                 let payload = Vec::new();
                 self.input_queue.push_release_all(payload, now_ms)
             }
+            InputEvent::PressedSet => {
+                // The receiver states what it holds; the queue builds the
+                // envelope the pressed-set protocol carries.
+                let envelope = self.input_queue.pressed_set_envelope(now_ms);
+                self.input_sent_us
+                    .insert(envelope.input_seq, self.clock.elapsed_us());
+                let payload = wire::encode_input(&envelope);
+                self.send_up(FragmentClass::Control, Priority::INPUT, payload);
+                PushOutcome::Queued
+            }
         };
         // The broken peer keeps the inputs it should have dropped, so its
         // queue grows past its cap.
-        if self.faults.unbounded_queue
-            && matches!(outcome, PushOutcome::Dropped(_))
-        {
+        if self.faults.unbounded_queue && matches!(outcome, PushOutcome::Dropped(_)) {
             self.retained_inputs += 1;
         }
+        let _ = &outcome;
     }
 
     /// The receiver's lane died.
     fn disconnect(&mut self) {
         self.connected = false;
         self.parked = true;
+        self.parked_since_ms = Some(self.clock.now_ms());
         self.parks += 1;
         self.input_queue.set_connected(false, self.clock.now_ms());
         self.host_input.on_park(self.clock.now_ms());
@@ -878,6 +1001,7 @@ impl Driver {
     fn reconnect(&mut self) {
         self.connected = true;
         self.parked = false;
+        self.parked_since_ms = None;
         self.input_queue.set_connected(true, self.clock.now_ms());
         self.host_input.on_resume();
         if self.faults.recreate_session {
@@ -895,6 +1019,19 @@ impl Driver {
     /// How many cells the sender still owes the receiver.
     fn pending_cells(&self) -> u32 {
         self.sender.accounting().pending_count()
+    }
+
+    /// Whether the tier's echo promise applies to this run.
+    ///
+    /// The promise is a promise about a link inside the tier's envelope: a
+    /// link with an outage, or with loss beyond the tier's bound, is
+    /// outside it, and the promise does not apply there.
+    fn echo_promise_applies(&self) -> bool {
+        let profile = self.link.profile();
+        self.tier != Tier::T4
+            && profile.outages.windows.is_empty()
+            && profile.down.loss.worst_case_permille() <= 100
+            && profile.up.loss.worst_case_permille() <= 100
     }
 
     /// The echo's budget: `2 × RTT + 250 ms`, on the **measured** round
@@ -916,27 +1053,40 @@ impl Driver {
 
     /// What the harness observed, right now.
     fn observation(&self) -> Observation {
-        let cells = self
-            .emitted
+        // Only the cells the receiver acknowledged matter to INV-2, and
+        // there are few of them: the observation is built on every tick, so
+        // it must not carry the whole surface.
+        let cells: Vec<CellState> = self
+            .acknowledged
             .iter()
-            .enumerate()
-            .map(|(index, emitted)| CellState {
-                cell: index as u32,
-                emitted: *emitted,
-                held: self.held[index],
-                acknowledged: self.acknowledged[index],
+            .map(|(cell, acknowledged)| CellState {
+                cell: *cell,
+                emitted: self.emitted[*cell as usize],
+                held: self.held[*cell as usize],
+                acknowledged: *acknowledged,
             })
             .collect();
-        let (sender_keys, sender_buttons) = split_tokens(&self.host_input.pressed());
+        let sender_keys: Vec<u32> = self.host_pressed_keys.iter().copied().collect();
+        let sender_buttons: Vec<u32> = self.host_pressed_buttons.iter().copied().collect();
         let (receiver_keys, receiver_buttons) = self.input_queue.pressed_set();
+        if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
+            eprintln!(
+                "PRESSED t={} sender={:?} receiver={:?} parked={} connected={}",
+                self.clock.elapsed_us(),
+                sender_keys,
+                receiver_keys,
+                self.parked,
+                self.connected
+            );
+        }
         let mut sender_pressed = sender_keys;
         sender_pressed.extend(sender_buttons);
         let mut receiver_pressed = receiver_keys;
         receiver_pressed.extend(receiver_buttons);
         let link_stats = self.link.stats();
         let sender_stats = *self.sender.stats();
-        let link_cap = self.link.profile().down.queue_cap_bytes
-            + self.link.profile().up.queue_cap_bytes;
+        let link_cap =
+            self.link.profile().down.queue_cap_bytes + self.link.profile().up.queue_cap_bytes;
         Observation {
             now_us: self.clock.elapsed_us(),
             applied_updates: self.applied_updates.clone(),
@@ -959,7 +1109,9 @@ impl Driver {
                 },
                 QueueDepth {
                     name: "receiver input queue".to_string(),
-                    depth: self.input_queue.len() as u64 + self.retained_inputs as u64,
+                    depth: self.input_queue.len() as u64
+                        + self.retained_inputs as u64
+                        + self.unsent_inputs as u64,
                     cap: self.input_queue.object_capacity() as u64,
                 },
                 QueueDepth {
@@ -975,7 +1127,7 @@ impl Driver {
             ],
             objects: self.objects.clone(),
             update_parts: self.update_parts.clone(),
-            releases: self.releases.clone(),
+            releases: self.recent_releases.iter().copied().collect(),
             window_budget_bytes: self.sender.pacer_window_budget_bytes(),
             echoes: self
                 .decisions
@@ -984,7 +1136,7 @@ impl Driver {
                 .map(|sample| sample.echo_ms)
                 .collect(),
             echo_budget_ms: self.echo_budget_ms(),
-            echo_promised: self.tier != Tier::T4,
+            echo_promised: self.echo_promise_applies(),
             lanes_created: self.lanes_created,
             session_lost: self.lanes_created > 1,
             link_dropped: link_stats.down.dropped(),
@@ -995,6 +1147,39 @@ impl Driver {
             hop_dropped: self.hop_dropped,
             receiver_reported_lost: self.receiver.stats().lost_objects + self.unattributed_claims,
             receiver_reordered: self.receiver.stats().reordered_objects,
+        }
+    }
+
+    /// Check the pressed set at the moment the park's grace elapses.
+    ///
+    /// INV-4 is about that moment: after a park beyond the grace period,
+    /// the sender's pressed set is empty. Checking it at the end of the run
+    /// would check a different moment — one in which the receiver may have
+    /// come back.
+    fn check_park_grace(&mut self) {
+        if !self.parked {
+            return;
+        }
+        let grace = mlp_core::media::input::KEY_RELEASE_GRACE_MS;
+        let Some(parked_since_ms) = self.parked_since_ms else {
+            return;
+        };
+        if self.clock.now_ms().saturating_sub(parked_since_ms) < grace {
+            return;
+        }
+        let observation = self.observation();
+        self.checker.check(Invariant::Inv4, &observation);
+    }
+
+    /// Drop the releases that have left the one-second window.
+    fn trim_releases(&mut self) {
+        let now = self.clock.elapsed_us();
+        while let Some(front) = self.recent_releases.front() {
+            if front.at_us.saturating_add(1_000_000) <= now {
+                self.recent_releases.pop_front();
+            } else {
+                break;
+            }
         }
     }
 
@@ -1009,6 +1194,7 @@ impl Driver {
         if self.converged() && self.capture_dirty.is_empty() {
             self.convergences += 1;
         }
+        self.trim_releases();
         let observation = self.observation();
         for invariant in Invariant::cheap() {
             self.checker.check(invariant, &observation);
@@ -1201,17 +1387,4 @@ fn path_for(label: &str) -> Option<MediaPath> {
         "quic" => Some(MediaPath::Quic),
         _ => None,
     }
-}
-
-/// Split the sender's pressed tokens into keys and buttons.
-fn split_tokens(tokens: &[InputToken]) -> (Vec<u32>, Vec<u32>) {
-    let mut keys = Vec::new();
-    let mut buttons = Vec::new();
-    for token in tokens {
-        match token {
-            InputToken::Key(code) => keys.push(*code),
-            InputToken::Button(code) => buttons.push(*code),
-        }
-    }
-    (keys, buttons)
 }

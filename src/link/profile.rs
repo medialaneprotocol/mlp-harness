@@ -62,13 +62,7 @@ impl Tier {
 
     /// Every tier, in order.
     pub const fn all() -> [Tier; 5] {
-        [
-            Self::T0,
-            Self::T1,
-            Self::T2,
-            Self::T3,
-            Self::T4,
-        ]
+        [Self::T0, Self::T1, Self::T2, Self::T3, Self::T4]
     }
 
     /// The tier named by a label, in either spelling.

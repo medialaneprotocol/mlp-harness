@@ -22,9 +22,10 @@
 use serde::{Deserialize, Serialize};
 
 /// The random component of a link's delay.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub enum Jitter {
     /// A constant delay.
+    #[default]
     None,
     /// A flat distribution over `[0, amplitude_us]`.
     Uniform {
@@ -41,12 +42,6 @@ pub enum Jitter {
         /// The distribution's scale, in microseconds.
         amplitude_us: u64,
     },
-}
-
-impl Default for Jitter {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl Jitter {
@@ -121,7 +116,11 @@ mod tests {
     fn no_jitter_draws_nothing() {
         let mut generator = Generator::new(1);
         assert_eq!(Jitter::none().sample_us(&mut generator), 0);
-        assert_eq!(generator.draws(), 0, "a distribution that draws nothing spends no draw");
+        assert_eq!(
+            generator.draws(),
+            0,
+            "a distribution that draws nothing spends no draw"
+        );
     }
 
     #[test]
@@ -146,7 +145,9 @@ mod tests {
     fn a_pareto_sample_has_a_heavy_tail() {
         let mut generator = Generator::new(4);
         let jitter = Jitter::pareto(100_000);
-        let mut samples: Vec<u64> = (0..2_000).map(|_| jitter.sample_us(&mut generator)).collect();
+        let mut samples: Vec<u64> = (0..2_000)
+            .map(|_| jitter.sample_us(&mut generator))
+            .collect();
         samples.sort_unstable();
         let median = samples[samples.len() / 2];
         let p99 = samples[samples.len() * 99 / 100];

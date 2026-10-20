@@ -32,9 +32,10 @@ use serde::{Deserialize, Serialize};
 use super::super::rng::Generator;
 
 /// How a direction loses objects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LossModel {
     /// Nothing is lost.
+    #[default]
     None,
     /// Every object is lost independently with the given probability.
     Uniform {
@@ -66,12 +67,6 @@ pub enum LossModel {
     },
 }
 
-impl Default for LossModel {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 impl LossModel {
     /// The expected length of a burst's run, in objects.
     pub const MEAN_RUN: u32 = 4;
@@ -95,6 +90,34 @@ impl LossModel {
             Self::Bursty { permille } => *permille > 0,
             Self::GilbertElliott { .. } => true,
             Self::Correlated { .. } => true,
+        }
+    }
+
+    /// The model's loss probability at a **full** queue, in permille.
+    ///
+    /// The correlated model is a function of the occupancy, so this is its
+    /// ceiling; a bursty model loses more than its entry probability, once
+    /// per object of the run.
+    pub fn worst_case_permille(&self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Uniform { permille } => *permille,
+            Self::Bursty { permille } => permille.saturating_mul(Self::MEAN_RUN),
+            Self::GilbertElliott {
+                good_to_bad_permille,
+                bad_to_good_permille,
+            } => {
+                // The expected share of the objects the chain spends in the
+                // bad state.
+                let leaving = *good_to_bad_permille + *bad_to_good_permille;
+                (*good_to_bad_permille * 1_000)
+                    .checked_div(leaving)
+                    .unwrap_or(0)
+            }
+            Self::Correlated {
+                base_permille,
+                queue_permille,
+            } => base_permille.saturating_add(*queue_permille),
         }
     }
 
@@ -234,8 +257,7 @@ mod tests {
         let mut previous_lost = false;
         let mut lost = 0;
         for _ in 0..20_000 {
-            let now_lost =
-                state.roll_with(&LossModel::Bursty { permille: 100 }, 0, &mut generator);
+            let now_lost = state.roll_with(&LossModel::Bursty { permille: 100 }, 0, &mut generator);
             if now_lost {
                 lost += 1;
                 if !previous_lost {
@@ -244,8 +266,14 @@ mod tests {
             }
             previous_lost = now_lost;
         }
-        assert!(lost > 1_500, "a bursty model loses more than the uniform one: {lost}");
-        assert!(runs < lost / 2, "the losses come in runs: {runs} runs of {lost} losses");
+        assert!(
+            lost > 1_500,
+            "a bursty model loses more than the uniform one: {lost}"
+        );
+        assert!(
+            runs < lost / 2,
+            "the losses come in runs: {runs} runs of {lost} losses"
+        );
     }
 
     #[test]
@@ -265,7 +293,10 @@ mod tests {
             }
             previous = now;
         }
-        assert!(transitions > 100, "the chain moves: {transitions} transitions");
+        assert!(
+            transitions > 100,
+            "the chain moves: {transitions} transitions"
+        );
     }
 
     #[test]
@@ -287,6 +318,9 @@ mod tests {
                 full_losses += 1;
             }
         }
-        assert!(full_losses > empty_losses * 3, "empty {empty_losses}, full {full_losses}");
+        assert!(
+            full_losses > empty_losses * 3,
+            "empty {empty_losses}, full {full_losses}"
+        );
     }
 }

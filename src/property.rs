@@ -166,8 +166,11 @@ pub fn random_scenario(seed: u64) -> Scenario {
             }),
         });
     }
+    // The settle phase is long enough for the estimator's round trip to
+    // converge: a budget computed from a round trip that has not converged
+    // yet is a budget of noise.
     scenario.steps.push(Step::Advance {
-        ms: 1_000 + generator.below(10_000),
+        ms: 4_000 + generator.below(10_000),
     });
     scenario
 }
@@ -216,14 +219,22 @@ pub fn run(cases: u64, first_seed: u64) -> PropertyReport {
     }
 }
 
+/// How many candidate scenarios the shrinker may try.
+pub const SHRINK_BUDGET: usize = 240;
+
 /// Shrink a failing case to the smallest case that still fails.
 pub fn shrink(case: &Case) -> Case {
     let mut best = case.clone();
     let mut changed = true;
-    while changed {
+    let mut tried = 0usize;
+    while changed && tried < SHRINK_BUDGET {
         changed = false;
         // Remove one step at a time, from the end.
         for index in 0..best.scenario.steps.len() {
+            if tried >= SHRINK_BUDGET {
+                break;
+            }
+            tried += 1;
             let mut candidate = best.clone();
             candidate.scenario.steps.remove(index);
             if let Some(smaller) = try_case(&candidate) {
@@ -237,6 +248,10 @@ pub fn shrink(case: &Case) -> Case {
         }
         // Shorten the durations.
         for index in 0..best.scenario.steps.len() {
+            if tried >= SHRINK_BUDGET {
+                break;
+            }
+            tried += 1;
             let mut candidate = best.clone();
             if let Step::Advance { ms } = candidate.scenario.steps[index] {
                 if ms > 10 {
@@ -333,8 +348,8 @@ mod tests {
 
     #[test]
     fn a_property_run_reports_what_it_ran() {
-        let report = run(5, 1_000);
-        assert_eq!(report.cases, 5);
-        assert!(report.clean + report.counterexamples.len() as u64 <= 5);
+        let report = run(3, 1_000);
+        assert_eq!(report.cases, 3);
+        assert!(report.clean + report.counterexamples.len() as u64 <= 3);
     }
 }

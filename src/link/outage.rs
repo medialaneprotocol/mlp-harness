@@ -186,11 +186,7 @@ mod tests {
 
     #[test]
     fn a_blackhole_affects_both_directions() {
-        let schedule = OutageSchedule::of(vec![OutageWindow::new(
-            0,
-            1_000,
-            OutageKind::Blackhole,
-        )]);
+        let schedule = OutageSchedule::of(vec![OutageWindow::new(0, 1_000, OutageKind::Blackhole)]);
         assert!(schedule.covering(500, Direction::Down).is_some());
         assert!(schedule.covering(500, Direction::Up).is_some());
     }
@@ -210,13 +206,7 @@ mod tests {
 
     #[test]
     fn a_partial_loss_window_is_not_a_blackhole() {
-        let window = OutageWindow::new(
-            0,
-            1_000,
-            OutageKind::PartialLoss {
-                permille: 500,
-            },
-        );
+        let window = OutageWindow::new(0, 1_000, OutageKind::PartialLoss { permille: 500 });
         assert!(window.kind.affects(Direction::Down));
         assert!(!window.kind.is_blackhole(Direction::Down));
     }

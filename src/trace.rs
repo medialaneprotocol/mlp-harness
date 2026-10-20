@@ -285,13 +285,11 @@ impl Trace {
             }
         };
         for update in &decisions.updates {
-            mix(
-                format!(
-                    "u:{}:{}:{}:{};",
-                    update.update_id, update.kind, update.cells, update.anchor
-                )
-                .as_bytes(),
-            );
+            mix(format!(
+                "u:{}:{}:{}:{};",
+                update.update_id, update.kind, update.cells, update.anchor
+            )
+            .as_bytes());
         }
         for ack in &decisions.acks {
             mix(format!("a:{};", ack.highest_applied_update_id).as_bytes());
@@ -303,13 +301,11 @@ impl Trace {
             mix(format!("s:{};", state.state).as_bytes());
         }
         for input in &decisions.inputs {
-            mix(
-                format!(
-                    "i:{}:{}:{}:{};",
-                    input.seq, input.kind, input.applied, input.expired
-                )
-                .as_bytes(),
-            );
+            mix(format!(
+                "i:{}:{}:{}:{};",
+                input.seq, input.kind, input.applied, input.expired
+            )
+            .as_bytes());
         }
         for echo in &decisions.echoes {
             mix(format!("e:{};", echo.input_seq).as_bytes());
@@ -346,6 +342,7 @@ mod tests {
                 bytes: 128,
                 anchor: true,
                 plan_id: None,
+                reflects_input_seq: 0,
             }],
             acks: vec![AckDecision {
                 at_us: 2_000,
@@ -384,7 +381,11 @@ mod tests {
     fn the_digest_is_sixteen_lowercase_hex_digits() {
         let digest = Trace::compute_digest(&decisions());
         assert_eq!(digest.len(), 16);
-        assert!(digest.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            digest
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
     }
 
     #[test]

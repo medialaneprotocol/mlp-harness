@@ -345,8 +345,6 @@ struct DirectionState {
     in_flight: Vec<Flight>,
     loss: LossState,
     stats: DirectionStats,
-    /// The delivery time of the last object this direction released.
-    last_delivery_us: u64,
 }
 
 impl DirectionState {
@@ -360,7 +358,6 @@ impl DirectionState {
             in_flight: Vec::new(),
             loss: LossState::new(),
             stats: DirectionStats::default(),
-            last_delivery_us: 0,
         }
     }
 
@@ -452,11 +449,14 @@ impl Link {
         self.profile = profile.clone();
         self.down.profile = profile.down;
         self.up.profile = profile.up;
-        self.down.bucket.tokens = self.down.bucket.tokens.min(self.down.capacity_micro_bytes());
+        self.down.bucket.tokens = self
+            .down
+            .bucket
+            .tokens
+            .min(self.down.capacity_micro_bytes());
         self.up.bucket.tokens = self.up.bucket.tokens.min(self.up.capacity_micro_bytes());
-        self.events.push(LinkEvent::ProfileChanged {
-            at_us: self.now_us,
-        });
+        self.events
+            .push(LinkEvent::ProfileChanged { at_us: self.now_us });
     }
 
     /// Offer an object to the link.
@@ -513,7 +513,12 @@ impl Link {
         let occupancy_permille = if queue_cap_bytes == 0 {
             1_000u32
         } else {
-            u32::try_from((queued_bytes * 1_000) / queue_cap_bytes).unwrap_or(1_000)
+            u32::try_from(
+                (queued_bytes * 1_000)
+                    .checked_div(queue_cap_bytes)
+                    .unwrap_or(1_000),
+            )
+            .unwrap_or(1_000)
         };
         let lost = {
             // The loss state and the generator are disjoint fields, so both
@@ -634,7 +639,8 @@ impl Link {
         let now = self.now_us;
         self.release_ready(direction, now);
         let mut due: Vec<Flight> = Vec::new();
-        let mut remaining: Vec<Flight> = Vec::with_capacity(self.state_mut(direction).in_flight.len());
+        let mut remaining: Vec<Flight> =
+            Vec::with_capacity(self.state_mut(direction).in_flight.len());
         {
             let state = self.state_mut(direction);
             for flight in state.in_flight.drain(..) {
@@ -649,11 +655,20 @@ impl Link {
         let mut deliveries = Vec::with_capacity(due.len());
         for flight in due {
             // An outage that starts while the object is in the pipe takes it.
-            if let Some(window) = self.profile.outages.covering(flight.deliver_at_us, direction) {
+            if let Some(window) = self
+                .profile
+                .outages
+                .covering(flight.deliver_at_us, direction)
+            {
                 match window.kind {
                     OutageKind::PartialLoss { permille } => {
                         if self.generator.chance_permille(permille) {
-                            self.drop(direction, flight.seq, flight.bytes.len() as u64, DropReason::Outage);
+                            self.drop(
+                                direction,
+                                flight.seq,
+                                flight.bytes.len() as u64,
+                                DropReason::Outage,
+                            );
                             continue;
                         }
                     }
@@ -724,8 +739,8 @@ impl Link {
                 let release_at_us = needed_at.max(front.offered_us);
                 let front = state.queue.pop_front().expect("the queue's front exists");
                 state.queued_bytes -= front.bytes.len() as u64;
-                let tokens_at_release = state.bucket.tokens
-                    + rate * (release_at_us - state.bucket.last_refill_us);
+                let tokens_at_release =
+                    state.bucket.tokens + rate * (release_at_us - state.bucket.last_refill_us);
                 state.bucket.tokens = tokens_at_release.saturating_sub(need);
                 state.bucket.last_refill_us = release_at_us;
                 (front, release_at_us)
@@ -763,19 +778,11 @@ impl Link {
         let jitter_us = profile.jitter.sample_us(&mut self.generator);
         let mut deliver_at_us =
             released_at_us + profile.propagation_us + jitter_us + profile.extra_delay_us;
-        // The link keeps the order it released: a link's delay is dominated
-        // by its queue, which does not drain and refill between two objects
-        // that leave microseconds apart. Reordering is a *property* of the
-        // profile, not an accident of the jitter draw, so it is asked for
-        // explicitly.
-        let last = self.state(direction).last_delivery_us;
-        deliver_at_us = deliver_at_us.max(last);
         if self.generator.chance_permille(profile.reorder_permille) {
             let displacement = self.generator.range_us(1, profile.reorder_window_us);
             deliver_at_us = deliver_at_us.saturating_add(displacement);
             self.state_mut(direction).stats.reordered += 1;
         }
-        self.state_mut(direction).last_delivery_us = deliver_at_us;
         let mut flights = vec![Flight {
             seq: queued.seq,
             bytes: queued.bytes.clone(),
@@ -884,7 +891,11 @@ mod tests {
         assert_eq!(deliveries.len(), 10);
         // The first is immediate, the last waits for nine seconds of rate.
         assert_eq!(deliveries[0].at_us, 0);
-        assert!(deliveries[9].at_us >= 9_000_000, "last at {}", deliveries[9].at_us);
+        assert!(
+            deliveries[9].at_us >= 9_000_000,
+            "last at {}",
+            deliveries[9].at_us
+        );
     }
 
     #[test]

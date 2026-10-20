@@ -31,6 +31,7 @@ fn main() -> ExitCode {
         "run" => run(rest),
         "predict" => predict_command(rest),
         "property" => property_command(rest),
+        "corpus" => corpus_command(rest),
         "invariants" => invariants(rest),
         "--help" | "-h" | "help" => {
             usage();
@@ -125,13 +126,16 @@ fn run(arguments: &[String]) -> ExitCode {
             trace.measurements.objects_dropped,
             trace.digest
         );
-        for violation in &trace.violations {
+        for violation in trace.violations.iter().take(10) {
             println!(
                 "  {} at {} µs: {}",
                 violation.invariant.id(),
                 violation.at_us,
                 violation.detail
             );
+        }
+        if trace.violations.len() > 10 {
+            println!("  ... and {} more", trace.violations.len() - 10);
         }
     }
     if trace.is_clean() {
@@ -182,7 +186,7 @@ fn predict_command(arguments: &[String]) -> ExitCode {
     let prediction = match (tier, scenario_path) {
         (Some(tier), None) => predict::predict_tier(tier),
         (None, Some(path)) => match read_scenario(&path) {
-            Ok(scenario) => predict::predict(&scenario),
+            Ok(scenario) => predict(&scenario),
             Err(error) => {
                 eprintln!("mlp-harness: {error}");
                 return ExitCode::from(2);
@@ -265,11 +269,7 @@ fn property_command(arguments: &[String]) -> ExitCode {
             report.counterexamples.len()
         );
         for case in &report.counterexamples {
-            println!(
-                "  seed {} violated {}",
-                case.seed,
-                case.violated.join(", ")
-            );
+            println!("  seed {} violated {}", case.seed, case.violated.join(", "));
         }
     }
     if report.counterexamples.is_empty() {
@@ -277,6 +277,138 @@ fn property_command(arguments: &[String]) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// Run every scenario in a directory and write its trace.
+///
+/// The corpus's document format: the scenario's identity, the trace's
+/// digest, and the trace itself. The corpus's gate compares the written
+/// documents with the committed ones, byte for byte.
+fn corpus_command(arguments: &[String]) -> ExitCode {
+    let mut scenarios_dir: Option<PathBuf> = None;
+    let mut out_dir: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--scenarios" => {
+                index += 1;
+                let Some(value) = arguments.get(index) else {
+                    eprintln!("mlp-harness: --scenarios needs a path");
+                    return ExitCode::from(2);
+                };
+                scenarios_dir = Some(PathBuf::from(value));
+            }
+            "--out" => {
+                index += 1;
+                let Some(value) = arguments.get(index) else {
+                    eprintln!("mlp-harness: --out needs a path");
+                    return ExitCode::from(2);
+                };
+                out_dir = Some(PathBuf::from(value));
+            }
+            other => {
+                eprintln!("mlp-harness: unknown argument {other:?}");
+                return ExitCode::from(2);
+            }
+        }
+        index += 1;
+    }
+    let (Some(scenarios_dir), Some(out_dir)) = (scenarios_dir, out_dir) else {
+        eprintln!("mlp-harness: corpus needs --scenarios <dir> and --out <dir>");
+        return ExitCode::from(2);
+    };
+    if let Err(error) = std::fs::create_dir_all(&out_dir) {
+        eprintln!("mlp-harness: cannot create {}: {error}", out_dir.display());
+        return ExitCode::from(2);
+    }
+    let mut entries: Vec<PathBuf> = match std::fs::read_dir(&scenarios_dir) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect(),
+        Err(error) => {
+            eprintln!(
+                "mlp-harness: cannot read {}: {error}",
+                scenarios_dir.display()
+            );
+            return ExitCode::from(2);
+        }
+    };
+    entries.sort();
+    let mut dirty = 0usize;
+    for path in &entries {
+        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) => {
+                eprintln!("mlp-harness: cannot read {}: {error}", path.display());
+                return ExitCode::from(2);
+            }
+        };
+        let scenario = match Scenario::from_json(&text) {
+            Ok(scenario) => scenario,
+            Err(error) => {
+                eprintln!("mlp-harness: {}: {error}", path.display());
+                return ExitCode::from(2);
+            }
+        };
+        let trace = mlp_harness::run(&scenario);
+        if !trace.is_clean() {
+            dirty += 1;
+        }
+        let document = corpus_document(&scenario, &trace);
+        let out = out_dir.join(format!("{name}.json"));
+        if let Err(error) = std::fs::write(&out, document) {
+            eprintln!("mlp-harness: cannot write {}: {error}", out.display());
+            return ExitCode::from(2);
+        }
+    }
+    println!(
+        "mlp-harness: {} scenario(s), {dirty} not clean",
+        entries.len()
+    );
+    if dirty == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// The corpus's document: the scenario's identity, the digest, the trace.
+fn corpus_document(scenario: &Scenario, trace: &mlp_harness::Trace) -> String {
+    let mut out = String::from("{\"schema\":1,\"scenario\":");
+    out.push_str(&json_string(&scenario.name));
+    out.push_str(",\"tier\":");
+    out.push_str(&json_string(scenario.tier.as_str()));
+    out.push_str(",\"digest\":");
+    out.push_str(&json_string(&trace.digest));
+    out.push_str(",\"trace\":");
+    out.push_str(&trace.to_json());
+    out.push_str("}\n");
+    out
+}
+
+/// A minimal JSON string encoder.
+fn json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            control if control.is_control() => out.push_str(&format!("\\u{:04x}", control as u32)),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Print the invariant table.
