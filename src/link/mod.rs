@@ -54,7 +54,7 @@ pub use handover::Handover;
 pub use jitter::Jitter;
 pub use loss::{LossModel, LossState};
 pub use outage::{Direction, OutageKind, OutageSchedule, OutageWindow};
-pub use profile::{DirectionProfile, LinkProfile, Tier};
+pub use profile::{DirectionProfile, LinkProfile, Tier, TierBand};
 
 /// The token bucket's unit: a millionth of a byte.
 ///

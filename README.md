@@ -32,6 +32,9 @@ byte crosses a real network.
 - a **property suite** that shrinks a failing case to a counterexample;
 - a **prediction**: given a tier's profile, what should the receiver's
   echo p95 be?
+- a **tier table**: the protocol's target envelope as data — every tier's
+  canonical point and the band it sits in — so a consumer reads the tier's
+  numbers instead of copying them;
 - a **sans-IO driver** for a consumer's own state machines, so that they
   are driven the way the protocol's are.
 
@@ -55,6 +58,9 @@ any order, in any process — and its trace is byte-identical.
 ```bash
 # What should T2's echo p95 be?
 mlp-harness predict --tier t2
+
+# The tier table: every tier's canonical point and its band.
+mlp-harness tiers
 
 # Run a scenario and write its trace.
 mlp-harness run --scenario scenarios/baseline-t2.json --trace /tmp/t2.json
@@ -100,12 +106,36 @@ The gate formats, builds, lints and tests the harness, runs every shipped
 scenario, requires every broken peer to trip its invariant, runs the
 property suite, and asks every tier for a prediction.
 
+## The tier table
+
+The tiers are the protocol's public contract: the rate, the round trip, the
+loss, the jitter and the outage pattern a link may have and still be one the
+protocol speaks about. The harness owns those numbers, and it publishes them
+as a table:
+
+```bash
+mlp-harness tiers            # the table, as JSON
+mlp-harness tiers --out f    # the same bytes, in a file
+```
+
+A row carries the tier's own numbers (the round trip, the echo budget the
+tier promises, the loss bound), the **band** of links the tier speaks about,
+and the tier's **canonical point** — the whole link profile the harness
+asserts at. The canonical point is inside its own band, and the table says so.
+
+The table is what a consumer reads: a browser implementation, a deployment's
+own harness, the conformance corpus. A consumer that copies a tier's numbers
+holds a second copy of the protocol's contract, and that copy drifts. The
+corpus commits the table and regenerates it byte for byte, so the committed
+copy always says what this harness says.
+
 ## The layout
 
 ```
 src/            the harness: the link, the clock, the driver, the invariants,
-                the trace, the predictions, the property suite, and the
-                sans-IO driver a consumer's own machines are driven with
+                the trace, the predictions, the tier table, the property
+                suite, and the sans-IO driver a consumer's own machines are
+                driven with
 scenarios/      the shipped scenarios: one per tier, one per story, and one
                 per deliberately broken peer
 scripts/        the gate, and the authoring tool for the scenarios

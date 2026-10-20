@@ -103,6 +103,128 @@ impl Tier {
             Self::T4 => 350,
         }
     }
+
+    /// The band of links the tier speaks about (MLP spec §2.1).
+    ///
+    /// The tier's *canonical point* ([`LinkProfile::tier`]) is one link inside
+    /// this band; the band is what the tier promises about, and what a
+    /// consumer checks its own numbers against. The numbers here are the
+    /// specification's table, as data, so a consumer reads them instead of
+    /// copying them.
+    pub const fn band(self) -> TierBand {
+        match self {
+            Self::T0 => TierBand {
+                rate_bps_down_min: 100_000_000,
+                rate_bps_down_max: None,
+                rate_bps_up_min: 10_000_000,
+                rtt_ms_min: 0,
+                rtt_ms_max: 10,
+                loss_permille_min: 0,
+                loss_permille_max: 0,
+                jitter_ms_min: 0,
+                jitter_ms_max: 2,
+                outage_ms_max: 0,
+                flap_cycles: 0,
+                flap_down_ms: 0,
+                flap_up_ms: 0,
+            },
+            Self::T1 => TierBand {
+                rate_bps_down_min: 5_000_000,
+                rate_bps_down_max: None,
+                rate_bps_up_min: 1_000_000,
+                rtt_ms_min: 50,
+                rtt_ms_max: 50,
+                loss_permille_min: 0,
+                loss_permille_max: 1,
+                jitter_ms_min: 0,
+                jitter_ms_max: 10,
+                outage_ms_max: 5_000,
+                flap_cycles: 0,
+                flap_down_ms: 0,
+                flap_up_ms: 0,
+            },
+            Self::T2 => TierBand {
+                rate_bps_down_min: 1_000_000,
+                rate_bps_down_max: None,
+                rate_bps_up_min: 256_000,
+                rtt_ms_min: 150,
+                rtt_ms_max: 150,
+                loss_permille_min: 0,
+                loss_permille_max: 20,
+                jitter_ms_min: 0,
+                jitter_ms_max: 40,
+                outage_ms_max: 5_000,
+                flap_cycles: 0,
+                flap_down_ms: 0,
+                flap_up_ms: 0,
+            },
+            Self::T3 => TierBand {
+                rate_bps_down_min: 256_000,
+                rate_bps_down_max: Some(512_000),
+                rate_bps_up_min: 128_000,
+                rtt_ms_min: 400,
+                rtt_ms_max: 400,
+                loss_permille_min: 50,
+                loss_permille_max: 100,
+                jitter_ms_min: 0,
+                jitter_ms_max: 100,
+                outage_ms_max: 10_000,
+                flap_cycles: 0,
+                flap_down_ms: 0,
+                flap_up_ms: 0,
+            },
+            Self::T4 => TierBand {
+                rate_bps_down_min: 32_000,
+                rate_bps_down_max: Some(64_000),
+                rate_bps_up_min: 32_000,
+                rtt_ms_min: 800,
+                rtt_ms_max: 2_000,
+                loss_permille_min: 200,
+                loss_permille_max: 500,
+                jitter_ms_min: 250,
+                jitter_ms_max: 1_000,
+                outage_ms_max: 30_000,
+                flap_cycles: 5,
+                flap_down_ms: 10_000,
+                flap_up_ms: 10_000,
+            },
+        }
+    }
+}
+
+/// The band of links a tier speaks about (MLP spec §2.1).
+///
+/// A tier is a *range* of links, and this is that range: the floors and
+/// ceilings the specification's table names, in the units a consumer reads.
+/// A ceiling the tier does not name is `None`, not a number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TierBand {
+    /// The downlink's floor, in bits per second.
+    pub rate_bps_down_min: u64,
+    /// The downlink's ceiling, in bits per second, when the tier names one.
+    pub rate_bps_down_max: Option<u64>,
+    /// The uplink's floor, in bits per second.
+    pub rate_bps_up_min: u64,
+    /// The round trip's floor, in milliseconds.
+    pub rtt_ms_min: u64,
+    /// The round trip's ceiling, in milliseconds.
+    pub rtt_ms_max: u64,
+    /// The loss's floor, in permille.
+    pub loss_permille_min: u32,
+    /// The loss's ceiling, in permille.
+    pub loss_permille_max: u32,
+    /// The jitter's floor, in milliseconds.
+    pub jitter_ms_min: u64,
+    /// The jitter's ceiling, in milliseconds.
+    pub jitter_ms_max: u64,
+    /// The longest outage the tier tolerates, in milliseconds.
+    pub outage_ms_max: u64,
+    /// How many flap cycles the tier's outage pattern carries.
+    pub flap_cycles: u32,
+    /// How long each flap cycle's outage lasts, in milliseconds.
+    pub flap_down_ms: u64,
+    /// How long each flap cycle's restore lasts, in milliseconds.
+    pub flap_up_ms: u64,
 }
 
 /// One direction of a link.

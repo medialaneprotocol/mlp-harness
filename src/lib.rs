@@ -69,6 +69,7 @@ pub mod property;
 pub mod rng;
 pub mod sans_io;
 pub mod scenario;
+pub mod tiers;
 pub mod trace;
 pub mod wire;
 
@@ -76,10 +77,13 @@ pub use clock::{VirtualClock, epoch};
 pub use driver::{Driver, carrier_for};
 pub use faults::Faults;
 pub use invariants::{DEFINITIONS, Definition, Invariant, Outcome};
-pub use link::{Direction, DropReason, Handover, Jitter, Link, LinkProfile, LossModel, Tier};
+pub use link::{
+    Direction, DropReason, Handover, Jitter, Link, LinkProfile, LossModel, Tier, TierBand,
+};
 pub use predict::{Prediction, canonical_scenario, predict, predict_tier};
 pub use sans_io::{GoldenTrace, TestHarness};
 pub use scenario::{GridSpec, InputEvent, Region, Scenario, Step};
+pub use tiers::{TierRow, TierTable, table as tier_table};
 pub use trace::Trace;
 
 /// Run a scenario and return its trace.

@@ -450,6 +450,29 @@ changes, the user types six characters, the session settles — scaled by
 the tier's round trip, because a scenario too short for the tier measures
 the clock rather than the protocol.
 
+### 7.2 The tier table
+
+The tiers are the protocol's public contract. The harness owns their
+numbers — `LinkProfile::tier` holds each tier's canonical point, `Tier::band`
+holds the band it sits in — and it publishes them as **data**:
+
+```
+mlp-harness tiers
+mlp-harness tiers --out tiers.json
+```
+
+A row carries the tier's own numbers (the round trip, the echo budget the
+tier promises, the loss bound), the band of links the tier speaks about, and
+the canonical point itself: the whole link profile. The canonical point is
+inside its own band, and the table says so.
+
+The table exists because a consumer needs the numbers, and every way of
+getting them other than reading this document is a way of holding a second
+copy: the harness's source is not machine-readable, a toolchain is a heavy
+thing to ask a consumer to have, and a copied number drifts. The table is
+one document, produced by the owner of the numbers, and the conformance
+corpus commits it and regenerates it byte for byte.
+
 ---
 
 ## 8. The property suite

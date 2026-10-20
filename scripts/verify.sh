@@ -204,6 +204,24 @@ else
     fail "$prediction_failures tier prediction(s) are not clean"
 fi
 
+# ── the tier table ─────────────────────────────────────────────────────────
+#
+# The table is the envelope as data, and the corpus commits it. A table that
+# changed between two runs would make the corpus's committed copy meaningless,
+# so the gate asks for it twice and requires the same bytes.
+
+if ./target/release/mlp-harness tiers >"$LOGDIR/tiers-a.json" 2>"$LOGDIR/tiers.log" \
+    && ./target/release/mlp-harness tiers >"$LOGDIR/tiers-b.json" 2>>"$LOGDIR/tiers.log"; then
+    if cmp -s "$LOGDIR/tiers-a.json" "$LOGDIR/tiers-b.json"; then
+        ok "the tier table is the same on every run"
+    else
+        fail "the tier table is the same on every run" "two runs produced different bytes"
+    fi
+else
+    fail "the tier table prints" "see the output below"
+    head -5 "$LOGDIR/tiers.log" >&2
+fi
+
 if [ "$FAILURES" -eq 0 ]; then
     echo "mlp-harness-gate: all checks passed ($PASSES)"
     exit 0

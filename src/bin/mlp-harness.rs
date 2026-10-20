@@ -4,6 +4,7 @@
 //!
 //! * `run` — run a scenario and write its trace;
 //! * `predict` — answer what a tier's link will do;
+//! * `tiers` — print the tier table: the envelope, as data;
 //! * `property` — run the randomised suite over a range of seeds;
 //! * `invariants` — print the invariant table.
 //!
@@ -30,6 +31,7 @@ fn main() -> ExitCode {
     match command {
         "run" => run(rest),
         "predict" => predict_command(rest),
+        "tiers" => tiers_command(rest),
         "property" => property_command(rest),
         "corpus" => corpus_command(rest),
         "invariants" => invariants(rest),
@@ -52,6 +54,7 @@ fn usage() {
          usage:\n\
          \x20 mlp-harness run --scenario <file> [--trace <file>] [--json]\n\
          \x20 mlp-harness predict --tier <t0..t4> [--scenario <file>] [--json]\n\
+         \x20 mlp-harness tiers [--out <file>]\n\
          \x20 mlp-harness property --cases <n> [--seed <n>] [--json]\n\
          \x20 mlp-harness invariants [--json]"
     );
@@ -221,6 +224,50 @@ fn predict_command(arguments: &[String]) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// Print the tier table: the protocol's envelope, as data.
+///
+/// The table is what a consumer reads instead of copying a tier's numbers.
+/// The corpus commits it, and the corpus's gate regenerates it and compares
+/// it byte for byte, so the committed copy always says what the harness says.
+fn tiers_command(arguments: &[String]) -> ExitCode {
+    let mut out_path: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--out" => {
+                index += 1;
+                let Some(value) = arguments.get(index) else {
+                    eprintln!("mlp-harness: --out needs a path");
+                    return ExitCode::from(2);
+                };
+                out_path = Some(PathBuf::from(value));
+            }
+            other => {
+                eprintln!("mlp-harness: unknown argument {other:?}");
+                return ExitCode::from(2);
+            }
+        }
+        index += 1;
+    }
+    let table = mlp_harness::tiers::table();
+    let document = table.to_json();
+    match out_path {
+        Some(path) => {
+            if let Err(error) = std::fs::write(&path, document) {
+                eprintln!("mlp-harness: cannot write {}: {error}", path.display());
+                return ExitCode::from(2);
+            }
+            println!(
+                "mlp-harness: {} tier(s) written to {}",
+                table.tiers.len(),
+                path.display()
+            );
+        }
+        None => print!("{document}"),
+    }
+    ExitCode::SUCCESS
 }
 
 /// Run the randomised suite.
