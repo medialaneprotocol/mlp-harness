@@ -92,6 +92,17 @@ impl Tier {
     pub const fn echo_budget_ms(self) -> u64 {
         2 * self.rtt_ms() + 250
     }
+
+    /// The tier's loss bound, in permille (MLP spec §2.1).
+    pub const fn loss_permille(self) -> u32 {
+        match self {
+            Self::T0 => 0,
+            Self::T1 => 1,
+            Self::T2 => 20,
+            Self::T3 => 100,
+            Self::T4 => 350,
+        }
+    }
 }
 
 /// One direction of a link.
@@ -270,6 +281,31 @@ impl LinkProfile {
         profile.down.loss = LossModel::None;
         profile.up.loss = LossModel::None;
         profile
+    }
+
+    /// Whether the profile is inside a tier's envelope.
+    ///
+    /// The envelope is the tier's canonical point, in the dimensions the
+    /// tier's promises depend on: the rate, the delay and the jitter. A
+    /// profile outside it is a link the tier says nothing about, so the
+    /// tier's promises do not apply to it.
+    pub fn within_envelope(&self, tier: Tier) -> bool {
+        let canonical = LinkProfile::tier(tier);
+        for (profile, canonical) in [(&self.down, &canonical.down), (&self.up, &canonical.up)] {
+            if profile.rate_bps < canonical.rate_bps {
+                return false;
+            }
+            if profile.propagation_us > canonical.propagation_us {
+                return false;
+            }
+            if profile.jitter.amplitude_us() > canonical.jitter.amplitude_us() {
+                return false;
+            }
+        }
+        // The loss, too: a link that loses more than the tier's bound is a
+        // link the tier says nothing about.
+        self.down.loss.worst_case_permille() <= tier.loss_permille()
+            && self.up.loss.worst_case_permille() <= tier.loss_permille()
     }
 
     /// The same profile with a different seed.

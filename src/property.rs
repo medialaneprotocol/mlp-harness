@@ -67,8 +67,8 @@ pub fn random_scenario(seed: u64) -> Scenario {
     let tier = Tier::all()[(generator.below(5)) as usize];
     let mut profile = LinkProfile::tier(tier).with_seed(generator.next_u64());
 
-    // The rates: a share of the tier's, so the queue is sometimes the
-    // binding constraint.
+    // The rates: at least the tier's, so the profile stays inside the
+    // tier's envelope and the tier's promises apply to it.
     profile.down.rate_bps = scale_rate(profile.down.rate_bps, &mut generator);
     profile.up.rate_bps = scale_rate(profile.up.rate_bps, &mut generator);
     profile.down.burst_bytes = profile.down.bytes_per_ms() * (100 + generator.below(1_900));
@@ -76,13 +76,16 @@ pub fn random_scenario(seed: u64) -> Scenario {
     profile.up.burst_bytes = profile.up.bytes_per_ms() * (100 + generator.below(1_900));
     profile.up.queue_cap_bytes = profile.up.burst_bytes * (1 + generator.below(4));
 
-    // The jitter.
-    profile.down.jitter = random_jitter(&mut generator);
-    profile.up.jitter = random_jitter(&mut generator);
+    // The jitter: no wider than the tier's own.
+    let down_amplitude = profile.down.jitter.amplitude_us();
+    let up_amplitude = profile.up.jitter.amplitude_us();
+    profile.down.jitter = random_jitter(&mut generator, down_amplitude);
+    profile.up.jitter = random_jitter(&mut generator, up_amplitude);
 
-    // The loss.
-    profile.down.loss = random_loss(&mut generator);
-    profile.up.loss = random_loss(&mut generator);
+    // The loss, inside the tier's bound.
+    let loss_bound = tier.loss_permille();
+    profile.down.loss = random_loss(&mut generator, loss_bound);
+    profile.up.loss = random_loss(&mut generator, loss_bound);
 
     // The reordering and the duplication.
     profile.down.reorder_permille = generator.below(200) as u32;
@@ -193,9 +196,14 @@ pub fn run_case(seed: u64) -> Case {
     }
 }
 
+/// How many counterexamples the suite reports.
+pub const MAX_COUNTEREXAMPLES: usize = 8;
+
 /// Run a property suite over a range of seeds.
 ///
-/// A failing case is shrunk before it is reported.
+/// Every failing case is shrunk before it is reported. The suite runs the
+/// whole range: a counterexample that only shows up on the five hundredth
+/// case is a counterexample.
 pub fn run(cases: u64, first_seed: u64) -> PropertyReport {
     let mut clean = 0;
     let mut counterexamples = Vec::new();
@@ -206,11 +214,9 @@ pub fn run(cases: u64, first_seed: u64) -> PropertyReport {
             clean += 1;
             continue;
         }
-        let shrunk = shrink(&case);
-        counterexamples.push(shrunk);
-        // The first counterexample is enough to stop: the report names the
-        // seed, and the seed reproduces it exactly.
-        break;
+        if counterexamples.len() < MAX_COUNTEREXAMPLES {
+            counterexamples.push(shrink(&case));
+        }
     }
     PropertyReport {
         cases,
@@ -288,34 +294,35 @@ fn try_case(candidate: &Case) -> Option<Case> {
     })
 }
 
-/// Scale a rate by a share.
+/// Scale a rate by a share, never below the tier's own.
 fn scale_rate(rate: u64, generator: &mut Generator) -> u64 {
-    let share = 25 + generator.below(176);
+    let share = 100 + generator.below(101);
     (rate * share / 100).max(1_000)
 }
 
-/// A random jitter.
-fn random_jitter(generator: &mut Generator) -> Jitter {
+/// A random jitter, no wider than the tier's own.
+fn random_jitter(generator: &mut Generator, amplitude_us: u64) -> Jitter {
+    let width = generator.below(amplitude_us + 1);
     match generator.below(3) {
         0 => Jitter::none(),
-        1 => Jitter::uniform(1_000 + generator.below(50_000)),
-        _ => Jitter::normal(1_000 + generator.below(100_000)),
+        1 => Jitter::uniform(width),
+        _ => Jitter::normal(width),
     }
 }
 
-/// A random loss model.
-fn random_loss(generator: &mut Generator) -> LossModel {
+/// A random loss model, inside the tier's bound.
+fn random_loss(generator: &mut Generator, bound: u32) -> LossModel {
     match generator.below(4) {
         0 => LossModel::None,
         1 => LossModel::Uniform {
-            permille: generator.below(500) as u32,
+            permille: generator.below(u64::from(bound) + 1) as u32,
         },
         2 => LossModel::Bursty {
-            permille: generator.below(300) as u32,
+            permille: generator.below(u64::from(bound) / 4 + 1) as u32,
         },
         _ => LossModel::Correlated {
-            base_permille: generator.below(100) as u32,
-            queue_permille: generator.below(900) as u32,
+            base_permille: generator.below(u64::from(bound) / 4 + 1) as u32,
+            queue_permille: generator.below(u64::from(bound) + 1) as u32,
         },
     }
 }

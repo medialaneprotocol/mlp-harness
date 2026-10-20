@@ -60,7 +60,7 @@ mlp-harness predict --tier t2
 mlp-harness run --scenario scenarios/baseline-t2.json --trace /tmp/t2.json
 
 # Look for counterexamples.
-mlp-harness property --cases 200 --seed 7000
+mlp-harness property --cases 200 --seed 20240101
 
 # The invariant table.
 mlp-harness invariants

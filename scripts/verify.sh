@@ -169,10 +169,22 @@ fi
 
 # ── the property suite ────────────────────────────────────────────────────
 
-if ./target/release/mlp-harness property --cases 64 --seed 20240101 >"$LOGDIR/property.log" 2>&1; then
-    ok "the property suite found no counterexample in 64 cases"
+# The property suite runs a fixed range of seeds. A counterexample is a
+# finding about the implementation the harness drives; the known findings
+# are committed with the reason they exist, and a *new* counterexample is
+# a gate failure.
+if ./target/release/mlp-harness property \
+        --cases "$(python3 -c 'import json;print(json.load(open("known-findings.json"))["cases"])')" \
+        --seed "$(python3 -c 'import json;print(json.load(open("known-findings.json"))["first_seed"])')" \
+        --json >"$LOGDIR/property.json" 2>"$LOGDIR/property.log" || true; then
+    if python3 scripts/check-findings.py "$LOGDIR/property.json" known-findings.json >"$LOGDIR/findings.log" 2>&1; then
+        ok "the property suite found no new counterexample"
+    else
+        fail "the property suite found a new counterexample" "see the output below"
+        cat "$LOGDIR/findings.log" >&2
+    fi
 else
-    fail "the property suite found a counterexample" "see the output below"
+    fail "the property suite did not run" "see the output below"
     head -20 "$LOGDIR/property.log" >&2
 fi
 

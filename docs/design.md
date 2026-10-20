@@ -434,7 +434,25 @@ simplifies profiles, keeping only the changes that preserve the failure,
 and prints the result as a scenario document.
 
 The suite is seeded: a case is reproducible from its seed alone, and the
-seed is the first thing a report names.
+seed is the first thing a report names. The randomised profiles stay
+**inside the tier's envelope** — the rate, the delay, the jitter and the
+loss are no worse than the tier's canonical point — because a promise is a
+promise about a link inside the envelope, and a link outside it is a
+different question.
+
+### 8.1 The known findings
+
+A counterexample is a **finding**: it says something about the
+implementation the harness drives. The gate runs a fixed range of seeds
+and compares the counterexamples with the **known findings**, which are
+committed in `known-findings.json` with the reason they exist. A *new*
+counterexample is a gate failure: somebody has to look at it.
+
+At the pinned revision the known findings are two seeds that break INV-8 —
+the echo's budget against a link whose loss drives the estimator's pace
+down, so the pulse update waits for the pacer longer than the budget
+allows. The fixes in the core's own work change both, and the list is
+emptied when the pin moves (see the switch-over plan).
 
 ---
 

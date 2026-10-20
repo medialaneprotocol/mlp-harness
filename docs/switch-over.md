@@ -38,7 +38,11 @@ Those fixes are in the core's own work. When they are published:
 3. the harness's `scripts/verify.sh` runs, and the shipped scenarios'
    digests are regenerated (the digests are over the *decisions*, so a
    core change moves them);
-4. the harness's tag moves to the new commit.
+4. the harness's **known findings** are re-examined: the two seeds that
+   break INV-8 at the old revision either stop breaking it — and
+   `known-findings.json` empties — or they break it differently, and the
+   list is updated with what the new finding is;
+5. the harness's tag moves to the new commit.
 
 **Nothing else in this plan depends on the pin moving**, so the rest can
 be done in parallel — but the corpus's switch-over (§4) should wait for

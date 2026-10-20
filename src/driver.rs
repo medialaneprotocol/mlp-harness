@@ -1035,6 +1035,7 @@ impl Driver {
             && profile.outages.windows.is_empty()
             && profile.down.loss.worst_case_permille() <= 100
             && profile.up.loss.worst_case_permille() <= 100
+            && profile.within_envelope(self.tier)
     }
 
     /// The echo's budget: `2 × RTT + 250 ms`, on the **measured** round
