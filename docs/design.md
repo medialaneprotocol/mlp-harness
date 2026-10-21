@@ -498,12 +498,14 @@ and compares the counterexamples with the **known findings**, which are
 committed in `known-findings.json` with the reason they exist. A *new*
 counterexample is a gate failure: somebody has to look at it.
 
-At the pinned revision the known findings are one seed that breaks INV-8:
-a T3 link whose carrier is handed over mid-session measures a 484 ms
-round trip, so the echo's budget is 2010 ms, and the echo's p95 reaches
-2091 ms — the handover's loss drives the estimator's pace down, and the
-pulse update waits for the pacer longer than the budget allows. The
-finding is committed with its reason, so a reader knows what it is.
+At the pinned revision the known findings are **none**. The seed that broke
+INV-8 at the previous core — a T3 link whose carrier is handed over
+mid-session, where the echo's p95 reached 2091 ms against a 2010 ms budget —
+holds now: the report that carries the acknowledgement and the probe's answer
+goes out at once instead of at the reporting cadence (MLP spec §6.2.1), so
+the sender's round-trip measurement no longer waits for the window the
+handover's loss stretches. A finding that no longer reproduces is removed
+from the list: the list says what is broken now, not what was broken once.
 
 ---
 
