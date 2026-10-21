@@ -17,7 +17,7 @@ publish = false
 [dependencies]
 # The machines the harness drives. Pinned by an immutable revision: the
 # harness tests one exact state of the protocol's core.
-mlp-core = { git = "https://github.com/medialaneprotocol/mlp-core", rev = "bc29ac0ae31d026404078d0ed59f97cb09301c78" }
+mlp-core = { git = "https://github.com/medialaneprotocol/mlp-core", rev = "7c3993524f37f534913ba74ddf77e4fb97d7c520" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The sans-IO driver's golden trace: the durations in a debug-formatted
