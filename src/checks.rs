@@ -136,9 +136,14 @@ pub struct Observation {
     pub sender_dropped: u64,
     /// How many objects the hops reported dropping.
     pub hop_dropped: u64,
-    /// How many objects the receiver reported as lost.
+    /// How many media updates the receiver reported as lost.
+    ///
+    /// The receiver's loss is counted in the **update-id** space (MLP spec
+    /// §5.2): the media updates it never saw. The link's and the hops' drops
+    /// are counted in objects, and in this harness one media object carries
+    /// one media update, so the two account for the same losses.
     pub receiver_reported_lost: u64,
-    /// How many objects the receiver saw out of order.
+    /// How many media updates the receiver saw out of order.
     pub receiver_reordered: u64,
 }
 
@@ -383,11 +388,11 @@ fn check_inv9(observation: &Observation) -> Option<String> {
 /// INV-10: every drop is attributed to exactly one hop.
 ///
 /// The check is one-directional, and deliberately so. The receiver's loss
-/// report comes from gap detection on the object id (MLP spec §6.2.2), and
-/// the receiver cannot know about an object that is still in flight, so it
-/// may report *less* than the hops lost: the difference is the objects on
-/// the wire. It may not report *more*, though: a loss nobody accounts for
-/// is a loss the transport cannot repair and cannot explain.
+/// report comes from gap detection in the **update-id** space (MLP spec
+/// §5.2), and the receiver cannot know about an update that is still in
+/// flight, so it may report *less* than the hops lost: the difference is
+/// the objects on the wire. It may not report *more*, though: a loss nobody
+/// accounts for is a loss the transport cannot repair and cannot explain.
 fn check_inv10(observation: &Observation) -> Option<String> {
     let attributed =
         observation.link_dropped + observation.sender_dropped + observation.hop_dropped;

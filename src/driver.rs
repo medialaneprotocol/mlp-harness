@@ -157,8 +157,8 @@ impl Driver {
         let receiver =
             MediaReceiverMachine::new(MediaReceiverConfig::for_carrier(carrier), clock.instant());
         // The sender's side parses the feedback that comes back, with its
-        // own machine: one object-id space per direction, so the gap
-        // detector never sees the other side's ids as a loss.
+        // own machine: the feedback objects carry no update id, so they are
+        // never accounted as media the peer lost.
         let host_rx =
             MediaReceiverMachine::new(MediaReceiverConfig::for_carrier(carrier), clock.instant());
         let cells = grid.cells() as usize;

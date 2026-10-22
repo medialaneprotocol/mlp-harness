@@ -534,14 +534,24 @@ harness's gate holds it to them.
 
 ### 10.1 The receiver's gap detection counts a reordering as a loss
 
-The receiver's loss report comes from gap detection on the object id. The
-core's writer drains by priority, so an object may overtake an older one
-on the wire; the receiver must not lower its expectation when that
-happens, or every later object looks like a lost one (MLP spec §6.2.2).
+The receiver's loss report comes from gap detection in the **update-id**
+space (MLP spec §5.2): the update id is the protocol's identity of a media
+update, and it is monotone per receiver. The core's writer drains by
+priority, so a media update may overtake an older one on the wire; the
+receiver must not lower its expectation when that happens, or every later
+update looks like a lost one (MLP spec §6.2.2).
 
-The expectation moves forward only: an overtaken object is reordered,
-never a gap, and a reordered object leaves the expectation where it was.
+The expectation moves forward only: an overtaken update is reordered,
+never a gap, and a reordered update leaves the expectation where it was.
 A gap is a gap, and only a gap.
+
+The object id cannot carry that meaning: its space is per sender (§5.1.1),
+and a lane carries objects from several senders. An intermediary's own
+object — a hop report, a lane error, a close — arrives with an id from the
+intermediary's counter, and read as a gap in the media sender's object-id
+sequence it is billions of lost objects. The receiver therefore counts the
+loss in the update-id space, and the object id keeps the deduplication it
+is for (§4.4).
 
 ### 10.2 The sender's round trip starts at one millisecond
 

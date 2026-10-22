@@ -172,7 +172,11 @@ pub struct Measurements {
     pub objects_delivered: u64,
     /// The objects the link lost.
     pub objects_dropped: u64,
-    /// The objects the receiver reported as lost.
+    /// The media updates the receiver reported as lost.
+    ///
+    /// The receiver's loss is counted in the **update-id** space (MLP spec
+    /// §5.2): the media updates it never saw. It mirrors the protocol's
+    /// `lost_objects` field, whose space the specification states.
     pub objects_lost: u64,
     /// The sender's measured round trip at the end, in milliseconds.
     pub rtt_ms: f64,
