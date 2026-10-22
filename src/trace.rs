@@ -129,8 +129,14 @@ pub struct Decisions {
     pub states: Vec<StateDecision>,
     /// The inputs.
     pub inputs: Vec<InputDecision>,
-    /// The echoes.
+    /// The echoes, measured the way the receiver sees them.
     pub echoes: Vec<EchoSample>,
+    /// The echoes, measured the way a **sender** sees them: from the sender's
+    /// application of the input to the arrival of the acknowledgement that
+    /// names it. This is the measurement a deployment makes
+    /// (`rm_host_media_echo_seconds`), and the echo's promise (annex INV-8) is
+    /// checked on it.
+    pub sender_echoes: Vec<EchoSample>,
 }
 
 /// One thing the harness saw that an invariant forbids.
@@ -155,6 +161,17 @@ pub struct Measurements {
     pub echo_max_ms: Option<u64>,
     /// How many echoes were measured.
     pub echo_samples: u64,
+    /// The **sender-side** echo's median, in milliseconds: the round trip the
+    /// sender measures (the input's application to the acknowledgement's
+    /// arrival). This is the measurement a deployment makes, and the echo's
+    /// promise (annex INV-8) is checked on it.
+    pub sender_echo_p50_ms: Option<u64>,
+    /// The sender-side echo's 95th percentile, in milliseconds.
+    pub sender_echo_p95_ms: Option<u64>,
+    /// The sender-side echo's largest value, in milliseconds.
+    pub sender_echo_max_ms: Option<u64>,
+    /// How many sender-side echoes were measured.
+    pub sender_echo_samples: u64,
     /// The time from the last capture change to convergence, in
     /// milliseconds.
     pub convergence_ms: Option<u64>,
@@ -197,7 +214,12 @@ pub struct Measurements {
     /// The objects the sender dropped when its release queue hit its bound.
     pub queue_overflow_drops: u64,
     /// The objects the sender force-freed after the in-flight wait.
-    pub in_flight_evictions: u64,
+    pub in_flight_evictions_total: u64,
+    /// The updates the sender's write queue refused (MLP spec §3.2 rule 4).
+    pub in_flight_deferred_total: u64,
+    /// The echo's carriers that took a queued object's place instead of being
+    /// refused by the write queue (MLP spec §6.3.5).
+    pub echo_critical_replacements_total: u64,
     /// The objects the sender dropped because a newer plan covered them.
     pub superseded: u64,
     /// The objects the sender dropped for exceeding the object cap.

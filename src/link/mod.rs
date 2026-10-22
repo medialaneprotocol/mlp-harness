@@ -48,6 +48,8 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
+use mlp_core::media::pdu::Priority;
+
 use crate::rng::Generator;
 
 pub use handover::Handover;
@@ -324,6 +326,12 @@ struct Queued {
     seq: u64,
     bytes: Vec<u8>,
     offered_us: u64,
+    /// The MLP priority the object carries (MLP spec §3.2 rule 2: "the MLP
+    /// priority field is the single authority").
+    priority: u8,
+    /// Whether the object is the echo's carrier (MLP spec §6.3.5): the
+    /// object that carries the input sequence the receiver answers.
+    echo_critical: bool,
 }
 
 /// An object in the pipe.
@@ -348,6 +356,30 @@ struct DirectionState {
 }
 
 impl DirectionState {
+    /// The object the writer releases next (MLP spec §3.2 rule 2).
+    ///
+    /// The writer drains by the MLP priority, and within a priority by age.
+    /// The **echo's carrier** (MLP spec §6.3.5) is released before the bulk it
+    /// would otherwise wait behind: it carries the input sequence the receiver
+    /// answers, and the echo's promise is a quarter of a round trip (annex
+    /// INV-8). The carrier is not the bulk, and the bulk is the traffic that
+    /// may wait.
+    fn pick_next(&self) -> Option<usize> {
+        self.queue
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, queued)| {
+                (
+                    // The carrier first: it is a fact the sender cannot wait for.
+                    !queued.echo_critical,
+                    queued.priority,
+                    queued.offered_us,
+                    queued.seq,
+                )
+            })
+            .map(|(index, _)| index)
+    }
+
     fn new(profile: DirectionProfile) -> Self {
         let capacity = profile.burst_bytes * MICRO_BYTES;
         Self {
@@ -460,7 +492,24 @@ impl Link {
     }
 
     /// Offer an object to the link.
+    /// Offer one object to the link.
+    ///
+    /// The priority and the echo-critical mark are the object's own: the link
+    /// models the **hop's writer**, and the writer drains by the MLP priority
+    /// (MLP spec §3.2 rule 2). An object offered without them is a
+    /// media-bulk object at the bulk's priority.
     pub fn offer(&mut self, direction: Direction, bytes: Vec<u8>) -> OfferOutcome {
+        self.offer_with(direction, bytes, Priority::MEDIA.get(), false)
+    }
+
+    /// Offer one object with the priority the fragment header carries.
+    pub fn offer_with(
+        &mut self,
+        direction: Direction,
+        bytes: Vec<u8>,
+        priority: u8,
+        echo_critical: bool,
+    ) -> OfferOutcome {
         let seq = self.next_seq;
         self.next_seq += 1;
         let length = bytes.len() as u64;
@@ -558,6 +607,8 @@ impl Link {
             seq,
             bytes,
             offered_us: now_us,
+            priority,
+            echo_critical,
         });
         OfferOutcome::Queued { seq }
     }
@@ -715,9 +766,10 @@ impl Link {
         loop {
             let (front, release_at_us) = {
                 let state = self.state_mut(direction);
-                let Some(front) = state.queue.front() else {
+                let Some(index) = state.pick_next() else {
                     break;
                 };
+                let front = state.queue[index].clone();
                 let need = (front.bytes.len() as u64) * MICRO_BYTES;
                 let rate = state.rate_micro_bytes_per_us();
                 if rate == 0 {
@@ -737,7 +789,7 @@ impl Link {
                     state.bucket.last_refill_us + (need - state.bucket.tokens).div_ceil(rate)
                 };
                 let release_at_us = needed_at.max(front.offered_us);
-                let front = state.queue.pop_front().expect("the queue's front exists");
+                state.queue.remove(index);
                 state.queued_bytes -= front.bytes.len() as u64;
                 let tokens_at_release =
                     state.bucket.tokens + rate * (release_at_us - state.bucket.last_refill_us);

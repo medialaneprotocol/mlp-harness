@@ -41,6 +41,7 @@ use mlp_core::media::input::{
 };
 use mlp_core::media::pdu::{Carrier, Fragment, FragmentClass, FragmentFlags, HeaderExt, Priority};
 use mlp_core::media::receiver::{MediaReceiveEvent, MediaReceiverConfig, MediaReceiverMachine};
+use mlp_core::media::scheduler::UpdateKind;
 use mlp_core::media::sender::{
     EnqueueOutcome, MediaSenderConfig, MediaSenderEvent, MediaSenderMachine, UpdateRequest,
 };
@@ -105,11 +106,16 @@ pub struct Driver {
     host_pressed_buttons: BTreeSet<u32>,
     input_sent_us: BTreeMap<u64, u64>,
     input_applications: Vec<InputApplication>,
+    /// The input sequence the next pulse carries (MLP spec §6.3.5).
+    pulse_pending: Option<u64>,
+    /// The highest input sequence the receiver's applied content reflects.
+    receiver_echo: u64,
     retained_inputs: usize,
     /// The input objects the deployment has taken but not sent.
     unsent_inputs: usize,
     received_updates: BTreeSet<u64>,
     echoed_inputs: BTreeSet<u64>,
+    sender_echoed_inputs: BTreeSet<u64>,
     up_object_id: u32,
 
     connected: bool,
@@ -185,10 +191,13 @@ impl Driver {
             host_pressed_buttons: BTreeSet::new(),
             input_sent_us: BTreeMap::new(),
             input_applications: Vec::new(),
+            pulse_pending: None,
+            receiver_echo: 0,
             retained_inputs: 0,
             unsent_inputs: 0,
             received_updates: BTreeSet::new(),
             echoed_inputs: BTreeSet::new(),
+            sender_echoed_inputs: BTreeSet::new(),
             up_object_id: UP_OBJECT_ID_BASE,
             connected: true,
             parked: false,
@@ -387,14 +396,31 @@ impl Driver {
         };
         let payload =
             wire::encode_media_payload(&decision.cells, total_cells, payload_bytes, update_id);
+        // The pulse is the echo's carrier (MLP spec §6.3.5): the update that
+        // goes out while an input is applied carries the input sequence the
+        // receiver answers, and it is echo-critical, so the sender's write
+        // queue never refuses it and it is released before the bulk.
+        let carrier = pulse && self.pulse_pending.is_some();
         let request = UpdateRequest {
             parts: vec![payload],
             cells: decision.cells.clone(),
             anchor: decision.anchor,
-            kind: decision.kind,
-            reflects_input_seq: self.host_input.last_applied_seq(),
+            kind: if carrier {
+                UpdateKind::Pulse
+            } else {
+                decision.kind
+            },
+            reflects_input_seq: if carrier {
+                // The stamp is spent only when the carrier is **accepted**: an
+                // update the sender refuses (its write queue is full) never
+                // left the host, so it never carried the stamp (MLP spec
+                // §6.3.5).
+                self.pulse_pending.unwrap_or_default()
+            } else {
+                0
+            },
             update_bytes: payload_bytes as u32,
-            echo_critical: false,
+            echo_critical: carrier,
             deadline_epoch_ms: None,
         };
         let payload_len = request.parts[0].len() as u64;
@@ -404,6 +430,9 @@ impl Driver {
         );
         match self.sender.enqueue_update(request, now) {
             EnqueueOutcome::Accepted { .. } => {
+                if carrier {
+                    self.pulse_pending = None;
+                }
                 for cell in &decision.cells {
                     self.emitted[*cell as usize] = update_id;
                     self.capture_dirty.retain(|dirty| dirty != cell);
@@ -469,7 +498,18 @@ impl Driver {
             };
             self.releases.push(release);
             self.recent_releases.push_back(release);
-            self.link.offer(Direction::Down, fragment.bytes);
+            // The hop's writer drains by the object's own priority, and the
+            // echo's carrier goes before the bulk (MLP spec §3.2 rule 2,
+            // §6.3.5).
+            let (priority, echo_critical) = match Fragment::parse(&fragment.bytes, Carrier::Grpc) {
+                Ok((parsed, _)) => (
+                    parsed.header.priority.get(),
+                    parsed.header.flags.contains(FragmentFlags::ECHO_REQUESTED),
+                ),
+                Err(_) => (Priority::MEDIA.get(), false),
+            };
+            self.link
+                .offer_with(Direction::Down, fragment.bytes, priority, echo_critical);
             released += 1;
             if released > 256 {
                 break;
@@ -582,7 +622,8 @@ impl Driver {
             Ok(fragment) => fragment,
             Err(_) => return,
         };
-        self.link.offer(Direction::Up, fragment.encode());
+        self.link
+            .offer_with(Direction::Up, fragment.encode(), priority.get(), false);
     }
 
     /// The next object id the receiver's side uses.
@@ -699,6 +740,17 @@ impl Driver {
             applied_cells.push(*cell);
         }
         self.received_updates.insert(update_id);
+        // The receiver's own report of what its applied content reflects
+        // (MLP spec §5.2, annex N-1): an anchor replaces the surface, so the
+        // content that reflected the older input is gone and the report goes
+        // back to what the anchor reflects; a delta only ever raises it.
+        let echo = if anchor {
+            reflects_input_seq
+        } else {
+            self.receiver_echo.max(reflects_input_seq)
+        };
+        self.receiver_echo = echo;
+        self.receiver.set_echo_of_input_seq(echo);
         self.receiver.note_applied(update_id);
         self.measure_echo(reflects_input_seq);
         // The prompt acknowledgement: the update is applied, so the sender
@@ -716,6 +768,39 @@ impl Driver {
         }
         let payload = wire::encode_ack(&ack);
         self.send_up(FragmentClass::Feedback, Priority::CONTROL, payload);
+    }
+
+    /// Measure the echo the way a **sender** measures it: from the moment the
+    /// sender applied the input to the moment the acknowledgement that names
+    /// it arrives back.
+    ///
+    /// The receiver-side measurement ([`Self::measure_echo`]) is the round trip
+    /// the receiver sees: the input's send to the update's apply. The
+    /// sender-side measurement is the other half of the same path: the update's
+    /// apply to the acknowledgement's arrival. A deployment measures the second
+    /// one (`rm_host_media_echo_seconds`), so the harness measures it too, and
+    /// the echo's promise (annex INV-8) is checked on it.
+    fn measure_sender_echo(&mut self, echo_seq: u64) {
+        if echo_seq == 0 {
+            return;
+        }
+        if !self.sender_echoed_inputs.insert(echo_seq) {
+            return;
+        }
+        let Some(applied_at_us) = self
+            .input_applications
+            .iter()
+            .find(|application| application.seq == echo_seq)
+            .map(|application| application.applied_at_us)
+        else {
+            return;
+        };
+        let echo_us = self.clock.elapsed_us().saturating_sub(applied_at_us);
+        self.decisions.sender_echoes.push(EchoSample {
+            input_seq: echo_seq,
+            echo_ms: echo_us / 1_000,
+            at_us: self.clock.elapsed_us(),
+        });
     }
 
     /// Measure the echo of an input, when an update reflects one.
@@ -764,6 +849,7 @@ impl Driver {
             };
             if let Some(ack) = wire::decode_ack(&object.payload) {
                 self.acks_received += 1;
+                self.measure_sender_echo(ack.echo_of_input_seq);
                 self.sender.on_ack(ack, now);
                 continue;
             }
@@ -817,6 +903,9 @@ impl Driver {
                 deadline_us: envelope.deadline_epoch_ms * 1_000,
                 always_applied,
             });
+            // The input is applied: the sender schedules the pulse that carries
+            // its sequence (MLP spec §6.3.5).
+            self.pulse_pending = Some(envelope.input_seq);
         }
         // The broken peer applies the same input twice, or applies one that
         // has already expired.
@@ -1139,6 +1228,12 @@ impl Driver {
                 .iter()
                 .map(|sample| sample.echo_ms)
                 .collect(),
+            sender_echoes: self
+                .decisions
+                .sender_echoes
+                .iter()
+                .map(|sample| sample.echo_ms)
+                .collect(),
             echo_budget_ms: self.echo_budget_ms(),
             echo_promised: self.echo_promise_applies(),
             lanes_created: self.lanes_created,
@@ -1329,12 +1424,34 @@ impl Driver {
             let index = ((echoes.len() as f64 * fraction).ceil() as usize).saturating_sub(1);
             echoes.get(index.min(echoes.len() - 1)).copied()
         };
+        // The sender-side echo: the round trip the sender measures, and the
+        // one a deployment measures (`rm_host_media_echo_seconds`).
+        let mut sender_echoes: Vec<u64> = self
+            .decisions
+            .sender_echoes
+            .iter()
+            .map(|sample| sample.echo_ms)
+            .collect();
+        sender_echoes.sort_unstable();
+        let sender_percentile = |fraction: f64| -> Option<u64> {
+            if sender_echoes.is_empty() {
+                return None;
+            }
+            let index = ((sender_echoes.len() as f64 * fraction).ceil() as usize).saturating_sub(1);
+            sender_echoes
+                .get(index.min(sender_echoes.len() - 1))
+                .copied()
+        };
         let link_stats = self.link.stats();
         Measurements {
             echo_p50_ms: percentile(0.50),
             echo_p95_ms: percentile(0.95),
             echo_max_ms: echoes.last().copied(),
             echo_samples: echoes.len() as u64,
+            sender_echo_p50_ms: sender_percentile(0.50),
+            sender_echo_p95_ms: sender_percentile(0.95),
+            sender_echo_max_ms: sender_echoes.last().copied(),
+            sender_echo_samples: sender_echoes.len() as u64,
             convergence_ms: self.convergence_ms(),
             convergences: self.convergences,
             bytes_down: link_stats.down.bytes_offered,
@@ -1353,7 +1470,9 @@ impl Driver {
             objects_enqueued: sender_stats.objects_enqueued,
             fragments_sent: sender_stats.fragments_sent,
             queue_overflow_drops: sender_stats.queue_overflow_drops_total,
-            in_flight_evictions: sender_stats.in_flight_evictions_total,
+            in_flight_deferred_total: sender_stats.in_flight_deferred_total,
+            echo_critical_replacements_total: sender_stats.echo_critical_replacements_total,
+            in_flight_evictions_total: sender_stats.in_flight_evictions_total,
             superseded: sender_stats.superseded_total,
             oversize_total: sender_stats.object_oversize_total,
             probes_sent: sender_stats.probes_sent,

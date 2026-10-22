@@ -1,0 +1,544 @@
+{
+  "schema": 1,
+  "name": "typing-echo-t4",
+  "tier": "T4",
+  "seed": 1004,
+  "link": {
+    "down": {
+      "rate_bps": 32000,
+      "propagation_us": 700000,
+      "jitter": {
+        "Pareto": {
+          "amplitude_us": 500000
+        }
+      },
+      "loss": {
+        "Uniform": {
+          "permille": 350
+        }
+      },
+      "reorder_permille": 0,
+      "duplicate_permille": 0,
+      "queue_cap_bytes": 8000,
+      "burst_bytes": 4000,
+      "reorder_window_us": 10000,
+      "duplicate_delay_us": 1000,
+      "extra_delay_us": 0
+    },
+    "up": {
+      "rate_bps": 32000,
+      "propagation_us": 700000,
+      "jitter": {
+        "Pareto": {
+          "amplitude_us": 500000
+        }
+      },
+      "loss": {
+        "Uniform": {
+          "permille": 350
+        }
+      },
+      "reorder_permille": 0,
+      "duplicate_permille": 0,
+      "queue_cap_bytes": 8000,
+      "burst_bytes": 4000,
+      "reorder_window_us": 10000,
+      "duplicate_delay_us": 1000,
+      "extra_delay_us": 0
+    },
+    "mtu_bytes": 1150,
+    "outages": {
+      "windows": []
+    },
+    "seed": 1004
+  },
+  "prior_bps": null,
+  "grid": {
+    "width_px": 1920,
+    "height_px": 1080,
+    "cell_size_px": 64
+  },
+  "faults": {
+    "apply_partial_update": false,
+    "acknowledge_unemitted_cell": false,
+    "apply_input_twice": false,
+    "apply_input_after_deadline": false,
+    "keep_key_held_after_release": false,
+    "unbounded_queue": false,
+    "oversize_object": false,
+    "burst_over_budget": false,
+    "delay_echo": false,
+    "recreate_session": false,
+    "unattributed_drop": false
+  },
+  "steps": [
+    {
+      "SetLink": {
+        "profile": {
+          "down": {
+            "rate_bps": 32000,
+            "propagation_us": 700000,
+            "jitter": {
+              "Pareto": {
+                "amplitude_us": 500000
+              }
+            },
+            "loss": {
+              "Uniform": {
+                "permille": 350
+              }
+            },
+            "reorder_permille": 0,
+            "duplicate_permille": 0,
+            "queue_cap_bytes": 8000,
+            "burst_bytes": 4000,
+            "reorder_window_us": 10000,
+            "duplicate_delay_us": 1000,
+            "extra_delay_us": 0
+          },
+          "up": {
+            "rate_bps": 32000,
+            "propagation_us": 700000,
+            "jitter": {
+              "Pareto": {
+                "amplitude_us": 500000
+              }
+            },
+            "loss": {
+              "Uniform": {
+                "permille": 350
+              }
+            },
+            "reorder_permille": 0,
+            "duplicate_permille": 0,
+            "queue_cap_bytes": 8000,
+            "burst_bytes": 4000,
+            "reorder_window_us": 10000,
+            "duplicate_delay_us": 1000,
+            "extra_delay_us": 0
+          },
+          "mtu_bytes": 1150,
+          "outages": {
+            "windows": []
+          },
+          "seed": 1004
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 4000
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyT",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyE",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyX",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 500
+      }
+    },
+    {
+      "Advance": {
+        "ms": 6000
+      }
+    },
+    {
+      "Assert": {
+        "invariant": "INV-8"
+      }
+    }
+  ]
+}

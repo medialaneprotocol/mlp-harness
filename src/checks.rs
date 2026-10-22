@@ -120,8 +120,13 @@ pub struct Observation {
     pub releases: Vec<Release>,
     /// The budget for one second of releases.
     pub window_budget_bytes: u64,
-    /// The measured echoes, in milliseconds.
+    /// The measured echoes, in milliseconds, the way the receiver sees them.
     pub echoes: Vec<u64>,
+    /// The measured echoes, in milliseconds, the way a **sender** sees them:
+    /// from the sender's application of the input to the arrival of the
+    /// acknowledgement that names it. This is the measurement a deployment
+    /// makes, and the echo's promise (annex INV-8) is checked on it.
+    pub sender_echoes: Vec<u64>,
     /// The echo budget.
     pub echo_budget_ms: u64,
     /// Whether the tier's echo promise applies here.
@@ -355,18 +360,32 @@ fn check_inv7(observation: &Observation) -> Option<String> {
 
 /// INV-8: the echo's p95 stays inside the budget.
 fn check_inv8(observation: &Observation) -> Option<String> {
-    if !observation.echo_promised || observation.echoes.is_empty() {
+    if !observation.echo_promised {
         return None;
     }
-    let mut samples = observation.echoes.clone();
-    samples.sort_unstable();
-    let index = ((samples.len() as f64 * 0.95).ceil() as usize).saturating_sub(1);
-    let p95 = samples[index.min(samples.len() - 1)];
-    if p95 > observation.echo_budget_ms {
-        return Some(format!(
-            "the echo's p95 is {p95} ms, above the {} ms budget",
-            observation.echo_budget_ms
-        ));
+    // The promise is checked on the **sender-side** echo: the round trip the
+    // sender measures (the input's application to the acknowledgement's
+    // arrival) is the one a deployment measures and the one a user waits for.
+    // The receiver-side echo is the same path measured from its other end, and
+    // it is checked too: the two ends must agree that the round trip is
+    // inside its budget.
+    for samples in [
+        observation.sender_echoes.clone(),
+        observation.echoes.clone(),
+    ] {
+        if samples.is_empty() {
+            continue;
+        }
+        let mut samples = samples;
+        samples.sort_unstable();
+        let index = ((samples.len() as f64 * 0.95).ceil() as usize).saturating_sub(1);
+        let p95 = samples[index.min(samples.len() - 1)];
+        if p95 > observation.echo_budget_ms {
+            return Some(format!(
+                "the echo's p95 is {p95} ms, above the {} ms budget",
+                observation.echo_budget_ms
+            ));
+        }
     }
     None
 }
@@ -450,6 +469,7 @@ mod tests {
             }],
             window_budget_bytes: 1_000,
             echoes: vec![100],
+            sender_echoes: vec![100],
             echo_budget_ms: 550,
             echo_promised: true,
             lanes_created: 1,
@@ -581,6 +601,18 @@ mod tests {
     fn a_slow_echo_trips_inv8() {
         let mut observation = clean();
         observation.echoes = vec![900];
+        observation.echo_budget_ms = 550;
+        let mut checker = Checker::new();
+        assert!(!checker.check(Invariant::Inv8, &observation));
+    }
+
+    /// The promise is on the **sender-side** echo: the round trip the sender
+    /// measures (the input's application to the acknowledgement's arrival) is
+    /// the one a deployment measures and the one a user waits for.
+    #[test]
+    fn a_slow_sender_echo_trips_inv8() {
+        let mut observation = clean();
+        observation.sender_echoes = vec![900];
         observation.echo_budget_ms = 550;
         let mut checker = Checker::new();
         assert!(!checker.check(Invariant::Inv8, &observation));
