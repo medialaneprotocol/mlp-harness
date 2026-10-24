@@ -420,6 +420,7 @@ impl Driver {
                 0
             },
             update_bytes: payload_bytes as u32,
+            stream_id: 0,
             echo_critical: carrier,
             deadline_epoch_ms: None,
         };
