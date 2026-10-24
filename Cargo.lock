@@ -26,7 +26,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "mlp-core"
 version = "0.1.0"
-source = "git+https://github.com/medialaneprotocol/mlp-core?rev=e4e5599227fd9a7ec500bb49eccf0e304bab3d16#e4e5599227fd9a7ec500bb49eccf0e304bab3d16"
+source = "git+https://github.com/medialaneprotocol/mlp-core?rev=49206518bffc28e5594770dde8427c6fc28ea95c#49206518bffc28e5594770dde8427c6fc28ea95c"
 dependencies = [
  "serde",
  "serde_json",
