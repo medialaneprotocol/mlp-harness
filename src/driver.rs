@@ -417,7 +417,7 @@ impl Driver {
         // update's cells across parts, each part carrying its own cells'
         // bitmap — the shape that lets the wire parity ride along on a
         // lossy lane. One part stays one part when the cells fit.
-        let parts: Vec<Vec<u8>> = if decision.cells.len() >= 12 {
+        let parts: Vec<Vec<u8>> = if decision.cells.len() >= 32 {
             let half = decision.cells.len() / 2;
             let (first, second) = decision.cells.split_at(half);
             vec![
