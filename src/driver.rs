@@ -454,17 +454,6 @@ impl Driver {
         // The wire truth for the parity's proof (MLP spec §6.9, INV-11): what
         // this update's parts actually carried on the wire.
         self.wire_parts.insert(update_id, request.parts.clone());
-        if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
-            eprintln!(
-                "FEC t={} update={} cells={} parts={} attached={} fec_loss={:.3}",
-                self.clock.elapsed_us(),
-                update_id,
-                decision.cells.len(),
-                request.parts.len(),
-                self.sender.stats().fec_parity_sent_total,
-                self.sender.fec_loss_ratio(),
-            );
-        }
         let payload_len = request.parts[0].len() as u64;
         let parts_cap = self.sender.scheduler().max_chunks_for(
             self.carrier.is_datagram(),
@@ -941,14 +930,6 @@ impl Driver {
             }
             if let Some(feedback) = wire::decode_feedback(&object.payload) {
                 self.feedbacks_received += 1;
-                if std::env::var_os("MLP_HARNESS_DEBUG").is_some() && feedback.lost_objects > 0 {
-                    eprintln!(
-                        "FB-IN t={} lost={} window={}",
-                        self.clock.elapsed_us(),
-                        feedback.lost_objects,
-                        feedback.window_ms,
-                    );
-                }
                 self.sender.on_feedback(feedback, now);
                 continue;
             }

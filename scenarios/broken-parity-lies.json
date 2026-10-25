@@ -14,7 +14,7 @@
       },
       "loss": {
         "Uniform": {
-          "permille": 60
+          "permille": 40
         }
       },
       "reorder_permille": 0,
@@ -35,7 +35,7 @@
       },
       "loss": {
         "Uniform": {
-          "permille": 60
+          "permille": 40
         }
       },
       "reorder_permille": 0,
