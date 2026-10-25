@@ -139,6 +139,9 @@ pub struct Driver {
     acks_received: u64,
     inputs_received: u64,
     gaps: u64,
+    /// Parts the wire parity recovered at the receiver (MLP spec §6.9):
+    /// each one is a lost part that cost no round trip.
+    parity_recovered: u64,
     stale_applies_skipped: u64,
 
     checker: Checker,
@@ -223,6 +226,7 @@ impl Driver {
             acks_received: 0,
             inputs_received: 0,
             gaps: 0,
+            parity_recovered: 0,
             stale_applies_skipped: 0,
             checker: Checker::new(),
         }
@@ -549,6 +553,7 @@ impl Driver {
                     self.send_up(FragmentClass::Feedback, Priority::REPORT, payload);
                 }
                 MediaReceiveEvent::Object(_)
+                | MediaReceiveEvent::ParityRecovered(_)
                 | MediaReceiveEvent::FragmentDropped { .. }
                 | MediaReceiveEvent::ObjectDropped { .. } => {}
             }
@@ -643,48 +648,14 @@ impl Driver {
         let events = self.receiver.on_message(bytes, now);
         for event in events {
             match event {
+                MediaReceiveEvent::ParityRecovered(object) => {
+                    // A lost part the parity answered on arrival (MLP spec
+                    // §6.9): no round trip was spent on it.
+                    self.parity_recovered += 1;
+                    self.apply_received_object(object, now);
+                }
                 MediaReceiveEvent::Object(object) => {
-                    if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
-                        eprintln!(
-                            "RECV t={} id={} class={:?} lost={} reord={}",
-                            self.clock.elapsed_us(),
-                            object.object_id,
-                            object.class,
-                            self.receiver.stats().lost_objects,
-                            self.receiver.stats().reordered_objects
-                        );
-                    }
-                    if let Some(echo) = wire::decode_echo(&object.payload) {
-                        self.receiver.on_probe_echo(echo, now);
-                        continue;
-                    }
-                    if object.class != FragmentClass::Media {
-                        continue;
-                    }
-                    let Some(meta) = object.update_meta() else {
-                        continue;
-                    };
-                    // The receiver's application rules (MLP spec §5.1): a
-                    // chained update applies only onto the state it chains
-                    // from; an anchor applies onto any held state.
-                    let anchor = object.is_anchor();
-                    if !anchor
-                        && meta.update_base != 0
-                        && !self.received_updates.contains(&meta.update_base)
-                    {
-                        // A gap: the update is refused whole, its cells stay
-                        // pending, and the sender repairs them.
-                        self.gaps += 1;
-                        continue;
-                    }
-                    self.apply_update(
-                        meta.update_id,
-                        meta.part_index,
-                        meta.part_count,
-                        meta.reflects_input_seq,
-                        anchor,
-                        &object.payload,
-                    );
+                    self.apply_received_object(object, now);
                 }
                 MediaReceiveEvent::FragmentDropped { .. }
                 | MediaReceiveEvent::ObjectDropped { .. } => {}
@@ -699,6 +670,52 @@ impl Driver {
                 }
             }
         }
+    }
+
+    /// The receiver's application rules for one arrived media object, wire
+    /// or parity-recovered (MLP spec §5.1, §6.9).
+    fn apply_received_object(
+        &mut self,
+        object: mlp_core::media::MediaObject,
+        now: std::time::Instant,
+    ) {
+        if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
+            eprintln!(
+                "RECV t={} id={} class={:?} lost={} reord={}",
+                self.clock.elapsed_us(),
+                object.object_id,
+                object.class,
+                self.receiver.stats().lost_objects,
+                self.receiver.stats().reordered_objects
+            );
+        }
+        if let Some(echo) = wire::decode_echo(&object.payload) {
+            self.receiver.on_probe_echo(echo, now);
+            return;
+        }
+        if object.class != FragmentClass::Media {
+            return;
+        }
+        let Some(meta) = object.update_meta() else {
+            return;
+        };
+        // A chained update applies only onto the state it chains from; an
+        // anchor applies onto any held state.
+        let anchor = object.is_anchor();
+        if !anchor && meta.update_base != 0 && !self.received_updates.contains(&meta.update_base) {
+            // A gap: the update is refused whole, its cells stay pending,
+            // and the sender repairs them.
+            self.gaps += 1;
+            return;
+        }
+        self.apply_update(
+            meta.update_id,
+            meta.part_index,
+            meta.part_count,
+            meta.reflects_input_seq,
+            anchor,
+            &object.payload,
+        );
     }
 
     /// Apply an update at the receiver.
