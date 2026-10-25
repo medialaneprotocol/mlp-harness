@@ -150,6 +150,13 @@ pub struct Observation {
     pub receiver_reported_lost: u64,
     /// How many media updates the receiver saw out of order.
     pub receiver_reordered: u64,
+    /// Parts the wire parity recovered (MLP spec §6.9).
+    pub parity_recovered: u64,
+    /// Parity objects whose XOR did not check out against the group's CRC:
+    /// each one recovered nothing and the repair ladder answered (MLP
+    /// spec §6.9, INV-11). A parity the wire garbled must never produce a
+    /// wrong application; the count is how the harness sees the lie.
+    pub parity_rejected: u64,
 }
 
 /// The checker: it counts the checks and the violations.
@@ -180,6 +187,7 @@ impl Checker {
             Invariant::Inv8 => check_inv8(observation),
             Invariant::Inv9 => check_inv9(observation),
             Invariant::Inv10 => check_inv10(observation),
+            Invariant::Inv11 => check_inv11(observation),
         };
         let entry = self.outcomes.entry(invariant).or_insert(Outcome {
             invariant,
@@ -424,6 +432,24 @@ fn check_inv10(observation: &Observation) -> Option<String> {
     None
 }
 
+/// A lying parity proves nothing (MLP spec §6.9): every recovery must be
+/// the part the sender actually sent. The harness holds the wire truth —
+/// the part payloads it handed the link — and a recovery whose payload no
+/// wire part ever carried is a wrong application, the one thing the
+/// recovery path must never yield.
+fn check_inv11(observation: &Observation) -> Option<String> {
+    // A rejected parity is a parity that lied: it recovered nothing, so no
+    // wrong application happened, but a wire that garbles the recovery
+    // path is a wire the deployment must see (MLP spec §6.9).
+    if observation.parity_rejected > 0 {
+        return Some(format!(
+            "{} parity objects failed their group's CRC and recovered nothing",
+            observation.parity_rejected
+        ));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +504,9 @@ mod tests {
             sender_dropped: 0,
             hop_dropped: 1,
             receiver_reordered: 0,
+
+            parity_recovered: 0,
+            parity_rejected: 0,
             receiver_reported_lost: 3,
         }
     }
@@ -490,7 +519,7 @@ mod tests {
             assert!(checker.check(invariant, &observation), "{invariant} fired");
         }
         assert!(checker.is_clean());
-        assert_eq!(checker.outcomes().len(), 10);
+        assert_eq!(checker.outcomes().len(), 11);
     }
 
     #[test]

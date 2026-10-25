@@ -105,6 +105,7 @@ fn broken_scenario(invariant: Invariant) -> &'static str {
         Invariant::Inv8 => "broken-slow-echo",
         Invariant::Inv9 => "broken-recreated-session",
         Invariant::Inv10 => "broken-unattributed-drop",
+        Invariant::Inv11 => "broken-parity-lies",
     }
 }
 

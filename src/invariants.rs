@@ -20,6 +20,7 @@
 //! | INV-8 | 1 | the input echo stays inside the tier's budget |
 //! | INV-9 | 1 | a session survives every outage and flap schedule |
 //! | INV-10 | 1 | every drop is attributed to exactly one hop |
+//! | INV-11 | 1 | a lying parity recovers nothing; the repair ladder answers |
 //!
 //! # A version
 //!
@@ -66,6 +67,12 @@ pub enum Invariant {
     /// Every drop is attributed to exactly one hop.
     #[serde(rename = "INV-10")]
     Inv10,
+    /// A parity object that lies never yields a wrong application: the
+    /// recovery proves itself against the group's CRC, and a parity that
+    /// fails it recovers nothing while the repair ladder answers (MLP
+    /// spec §6.9).
+    #[serde(rename = "INV-11")]
+    Inv11,
 }
 
 impl Invariant {
@@ -82,6 +89,7 @@ impl Invariant {
             Self::Inv8 => "INV-8",
             Self::Inv9 => "INV-9",
             Self::Inv10 => "INV-10",
+            Self::Inv11 => "INV-11",
         }
     }
 
@@ -123,6 +131,9 @@ impl Invariant {
             Self::Inv10 => {
                 "Every drop is attributed to exactly one hop: the sum of the hop reports and the link loss equals the receiver-reported loss, within one object."
             }
+            Self::Inv11 => {
+                "Every parity recovery is the part the sender actually sent: a parity whose XOR does not check out against the group's CRC recovers nothing, and the repair ladder answers."
+            }
         }
     }
 
@@ -143,11 +154,12 @@ impl Invariant {
             Self::Inv8 => "an echo series whose p95 exceeds the tier's budget.",
             Self::Inv9 => "a session lost to an outage, or a second lane created for one receiver.",
             Self::Inv10 => "a drop that no hop accounts for, or a drop two hops account for.",
+            Self::Inv11 => "a parity recovery whose payload the wire never carried.",
         }
     }
 
     /// Every invariant, in order.
-    pub const fn all() -> [Invariant; 10] {
+    pub const fn all() -> [Invariant; 11] {
         [
             Self::Inv1,
             Self::Inv2,
@@ -159,6 +171,7 @@ impl Invariant {
             Self::Inv8,
             Self::Inv9,
             Self::Inv10,
+            Self::Inv11,
         ]
     }
 
@@ -214,7 +227,7 @@ pub struct Definition {
 }
 
 /// Every definition, in one table.
-pub const DEFINITIONS: [Definition; 10] = [
+pub const DEFINITIONS: [Definition; 11] = [
     Definition {
         invariant: Invariant::Inv1,
         version: Invariant::Inv1.version(),
@@ -275,6 +288,12 @@ pub const DEFINITIONS: [Definition; 10] = [
         statement: Invariant::Inv10.statement(),
         forbids: Invariant::Inv10.forbids(),
     },
+    Definition {
+        invariant: Invariant::Inv11,
+        version: Invariant::Inv11.version(),
+        statement: Invariant::Inv11.statement(),
+        forbids: Invariant::Inv11.forbids(),
+    },
 ];
 
 /// One invariant's outcome in a run.
@@ -297,14 +316,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn there_are_ten_invariants_and_they_are_numbered_in_order() {
-        assert_eq!(Invariant::all().len(), 10);
+    fn there_are_eleven_invariants_and_they_are_numbered_in_order() {
+        assert_eq!(Invariant::all().len(), 11);
         for (index, invariant) in Invariant::all().into_iter().enumerate() {
             assert_eq!(invariant.id(), format!("INV-{}", index + 1));
             assert_eq!(Invariant::from_number(index + 1), Some(invariant));
         }
         assert_eq!(Invariant::from_number(0), None);
-        assert_eq!(Invariant::from_number(11), None);
+        assert_eq!(Invariant::from_number(12), None);
     }
 
     #[test]

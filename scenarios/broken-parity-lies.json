@@ -1,0 +1,156 @@
+{
+  "schema": 1,
+  "name": "broken-parity-lies",
+  "tier": "T2",
+  "seed": 1,
+  "link": {
+    "down": {
+      "rate_bps": 1000000,
+      "propagation_us": 75000,
+      "jitter": {
+        "Normal": {
+          "amplitude_us": 40000
+        }
+      },
+      "loss": {
+        "Uniform": {
+          "permille": 60
+        }
+      },
+      "reorder_permille": 0,
+      "duplicate_permille": 0,
+      "queue_cap_bytes": 250000,
+      "burst_bytes": 125000,
+      "reorder_window_us": 10000,
+      "duplicate_delay_us": 1000,
+      "extra_delay_us": 0
+    },
+    "up": {
+      "rate_bps": 256000,
+      "propagation_us": 75000,
+      "jitter": {
+        "Normal": {
+          "amplitude_us": 40000
+        }
+      },
+      "loss": {
+        "Uniform": {
+          "permille": 60
+        }
+      },
+      "reorder_permille": 0,
+      "duplicate_permille": 0,
+      "queue_cap_bytes": 64000,
+      "burst_bytes": 32000,
+      "reorder_window_us": 10000,
+      "duplicate_delay_us": 1000,
+      "extra_delay_us": 0
+    },
+    "mtu_bytes": 65536,
+    "outages": {
+      "windows": []
+    },
+    "seed": 1
+  },
+  "grid": {
+    "width_px": 1920,
+    "height_px": 1080,
+    "cell_size_px": 64
+  },
+  "steps": [
+    {
+      "Advance": {
+        "ms": 1000
+      }
+    },
+    {
+      "CaptureChange": {
+        "region": {
+          "x_px": 320,
+          "y_px": 240,
+          "width_px": 640,
+          "height_px": 200
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 1000
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 20
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": true
+          }
+        }
+      }
+    },
+    {
+      "ViewerInput": {
+        "event": {
+          "Key": {
+            "code": "KeyA",
+            "pressed": false
+          }
+        }
+      }
+    },
+    {
+      "Advance": {
+        "ms": 20
+      }
+    },
+    {
+      "ViewerDisconnect": null
+    },
+    {
+      "Advance": {
+        "ms": 4000
+      }
+    },
+    {
+      "ViewerReconnect": null
+    },
+    {
+      "Advance": {
+        "ms": 6000
+      }
+    },
+    {
+      "Assert": {
+        "invariant": "INV-11"
+      }
+    }
+  ],
+  "faults": {
+    "parity_lies": true
+  }
+}

@@ -42,6 +42,9 @@ pub struct Faults {
     pub recreate_session: bool,
     /// The peer loses an object without any hop accounting for it.
     pub unattributed_drop: bool,
+    /// A garbled parity object passes the peer's wire: its XOR body no
+    /// longer checks out against the group's CRC (MLP spec §6.9).
+    pub parity_lies: bool,
 }
 
 impl Faults {
@@ -64,6 +67,7 @@ impl Faults {
             delay_echo: true,
             recreate_session: true,
             unattributed_drop: true,
+            parity_lies: true,
         }
     }
 
@@ -81,6 +85,7 @@ impl Faults {
             Invariant::Inv8 => faults.delay_echo = true,
             Invariant::Inv9 => faults.recreate_session = true,
             Invariant::Inv10 => faults.unattributed_drop = true,
+            Invariant::Inv11 => faults.parity_lies = true,
         }
         faults
     }
@@ -121,6 +126,9 @@ impl Faults {
         if self.unattributed_drop {
             names.push("unattributed-drop");
         }
+        if self.parity_lies {
+            names.push("parity-lies");
+        }
         names
     }
 
@@ -151,6 +159,6 @@ mod tests {
 
     #[test]
     fn every_fault_is_listed_when_it_is_on() {
-        assert_eq!(Faults::all().active().len(), 11);
+        assert_eq!(Faults::all().active().len(), 12);
     }
 }

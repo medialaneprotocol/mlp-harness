@@ -142,6 +142,12 @@ pub struct Driver {
     /// Parts the wire parity recovered at the receiver (MLP spec §6.9):
     /// each one is a lost part that cost no round trip.
     parity_recovered: u64,
+    /// The parts the wire truthfully carried, by update id: what the sender
+    /// actually encoded. A parity recovery must name a payload this map
+    /// holds — anything else is a wrong application (INV-11).
+    wire_parts: std::collections::HashMap<u64, Vec<Vec<u8>>>,
+    /// Recoveries whose payload the wire never carried.
+    parity_lies_seen: u64,
     stale_applies_skipped: u64,
 
     checker: Checker,
@@ -227,6 +233,8 @@ impl Driver {
             inputs_received: 0,
             gaps: 0,
             parity_recovered: 0,
+            wire_parts: std::collections::HashMap::new(),
+            parity_lies_seen: 0,
             stale_applies_skipped: 0,
             checker: Checker::new(),
         }
@@ -405,8 +413,22 @@ impl Driver {
         // receiver answers, and it is echo-critical, so the sender's write
         // queue never refuses it and it is released before the bulk.
         let carrier = pulse && self.pulse_pending.is_some();
+        // The source's parting (MLP spec §6.9): a codec may split an
+        // update's cells across parts, each part carrying its own cells'
+        // bitmap — the shape that lets the wire parity ride along on a
+        // lossy lane. One part stays one part when the cells fit.
+        let parts: Vec<Vec<u8>> = if decision.cells.len() >= 12 {
+            let half = decision.cells.len() / 2;
+            let (first, second) = decision.cells.split_at(half);
+            vec![
+                wire::encode_media_payload(first, total_cells, payload_bytes / 2, update_id),
+                wire::encode_media_payload(second, total_cells, payload_bytes / 2, update_id),
+            ]
+        } else {
+            vec![payload]
+        };
         let request = UpdateRequest {
-            parts: vec![payload],
+            parts,
             cells: decision.cells.clone(),
             anchor: decision.anchor,
             kind: if carrier {
@@ -429,6 +451,9 @@ impl Driver {
             echo_critical: carrier,
             deadline_epoch_ms: None,
         };
+        // The wire truth for the parity's proof (MLP spec §6.9, INV-11): what
+        // this update's parts actually carried on the wire.
+        self.wire_parts.insert(update_id, request.parts.clone());
         let payload_len = request.parts[0].len() as u64;
         let parts_cap = self.sender.scheduler().max_chunks_for(
             self.carrier.is_datagram(),
@@ -507,15 +532,34 @@ impl Driver {
             // The hop's writer drains by the object's own priority, and the
             // echo's carrier goes before the bulk (MLP spec §3.2 rule 2,
             // §6.3.5).
-            let (priority, echo_critical) = match Fragment::parse(&fragment.bytes, Carrier::Grpc) {
-                Ok((parsed, _)) => (
-                    parsed.header.priority.get(),
-                    parsed.header.flags.contains(FragmentFlags::ECHO_REQUESTED),
-                ),
-                Err(_) => (Priority::MEDIA.get(), false),
-            };
+            let (priority, echo_critical, bytes) =
+                match Fragment::parse(&fragment.bytes, Carrier::Grpc) {
+                    Ok((mut parsed, _)) => {
+                        let mut bytes = fragment.bytes;
+                        // The lying parity (MLP spec §6.9, INV-11): a garbled
+                        // XOR body passes the wire unchanged. The receiver must
+                        // prove every recovery against the group's CRC, so this
+                        // parity recovers nothing and the repair ladder answers.
+                        if self.faults.parity_lies
+                            && parsed
+                                .ext
+                                .get_u64(mlp_core::media::pdu::tlv::FEC_GROUP_ID)
+                                .is_some()
+                            && !parsed.payload.is_empty()
+                        {
+                            parsed.payload[0] ^= 0x80;
+                            bytes = parsed.encode();
+                        }
+                        (
+                            parsed.header.priority.get(),
+                            parsed.header.flags.contains(FragmentFlags::ECHO_REQUESTED),
+                            bytes,
+                        )
+                    }
+                    Err(_) => (Priority::MEDIA.get(), false, fragment.bytes),
+                };
             self.link
-                .offer_with(Direction::Down, fragment.bytes, priority, echo_critical);
+                .offer_with(Direction::Down, bytes, priority, echo_critical);
             released += 1;
             if released > 256 {
                 break;
@@ -650,8 +694,20 @@ impl Driver {
             match event {
                 MediaReceiveEvent::ParityRecovered(object) => {
                     // A lost part the parity answered on arrival (MLP spec
-                    // §6.9): no round trip was spent on it.
-                    self.parity_recovered += 1;
+                    // §6.9): no round trip was spent on it. The proof: the
+                    // recovery must be a part the wire actually carried.
+                    let meta = object.update_meta();
+                    let honest = meta
+                        .as_ref()
+                        .and_then(|meta| self.wire_parts.get(&meta.update_id))
+                        .map(|parts| parts.contains(&object.payload))
+                        .unwrap_or(false);
+                    if honest {
+                        self.parity_recovered += 1;
+                    } else {
+                        self.parity_lies_seen += 1;
+                        continue;
+                    }
                     self.apply_received_object(object, now);
                 }
                 MediaReceiveEvent::Object(object) => {
@@ -676,7 +732,7 @@ impl Driver {
     /// or parity-recovered (MLP spec §5.1, §6.9).
     fn apply_received_object(
         &mut self,
-        object: mlp_core::media::MediaObject,
+        object: mlp_core::media::object::MediaObject,
         now: std::time::Instant,
     ) {
         if std::env::var_os("MLP_HARNESS_DEBUG").is_some() {
@@ -1264,6 +1320,8 @@ impl Driver {
                 + sender_stats.object_oversize_total,
             hop_dropped: self.hop_dropped,
             receiver_reported_lost: self.receiver.stats().lost_objects + self.unattributed_claims,
+            parity_recovered: self.parity_recovered,
+            parity_rejected: self.receiver.stats().parity_rejected_total,
             receiver_reordered: self.receiver.stats().reordered_objects,
         }
     }
